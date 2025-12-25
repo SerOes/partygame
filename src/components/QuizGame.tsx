@@ -248,8 +248,12 @@ const QuizGame: React.FC<QuizGameProps> = ({ isAdmin }) => {
         });
 
         // Show scoreboard for ALL players (broadcasted by server)
+        // But only if we're not already in LEADERBOARD phase (prevents loop)
         socket.on('show-scoreboard', () => {
-            setShowScoreboard(true);
+            const currentSession = useGameStore.getState().session;
+            if (currentSession?.phase !== 'LEADERBOARD') {
+                setShowScoreboard(true);
+            }
         });
 
         socket.on('break-ended', () => {
