@@ -1,0 +1,308 @@
+/* Base Styles */
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  font-family: 'Poppins', sans-serif;
+  background-color: #0c0014;
+  color: white;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Custom Fonts */
+.font-titan {
+  font-family: 'Titan One', cursive;
+}
+
+/* Neon Effects */
+.neon-glow {
+  text-shadow:
+    0 0 10px rgba(255, 0, 255, 0.8),
+    0 0 20px rgba(255, 0, 255, 0.4),
+    0 0 40px rgba(255, 0, 255, 0.2);
+}
+
+.neon-border {
+  box-shadow: 0 0 15px rgba(0, 255, 255, 0.5);
+}
+
+/* Glass Effect */
+.glass {
+  background: rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* Animations */
+@keyframes pulse-neon {
+  0% {
+    box-shadow: 0 0 10px rgba(255, 20, 147, 0.4);
+  }
+
+  50% {
+    box-shadow: 0 0 30px rgba(255, 20, 147, 0.8), 0 0 50px rgba(255, 20, 147, 0.4);
+  }
+
+  100% {
+    box-shadow: 0 0 10px rgba(255, 20, 147, 0.4);
+  }
+}
+
+.animate-pulse-neon {
+  animation: pulse-neon 2s infinite;
+}
+
+@keyframes sound-wave {
+
+  0%,
+  100% {
+    transform: scaleY(0.5);
+  }
+
+  50% {
+    transform: scaleY(1.5);
+  }
+}
+
+.animate-sound-wave {
+  animation: sound-wave 0.5s ease-in-out infinite;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in {
+  animation: fade-in 0.3s ease-out;
+}
+
+/* Mobile Responsiveness */
+@media (max-width: 640px) {
+  html {
+    font-size: 14px;
+  }
+
+  /* Ensure touch targets are at least 48px */
+  button,
+  a,
+  input,
+  [role="button"] {
+    min-height: 48px;
+  }
+
+  /* Larger tap areas for game buttons */
+  .game-button {
+    min-height: 64px;
+    font-size: 1.25rem;
+  }
+}
+
+/* Safe area insets for notched devices */
+@supports (padding-top: env(safe-area-inset-top)) {
+  header {
+    padding-top: calc(1rem + env(safe-area-inset-top));
+    padding-left: calc(1rem + env(safe-area-inset-left));
+    padding-right: calc(1rem + env(safe-area-inset-right));
+  }
+
+  .pb-safe {
+    padding-bottom: calc(1.5rem + env(safe-area-inset-bottom));
+  }
+}
+
+/* Landscape mode adjustments */
+@media (max-height: 500px) and (orientation: landscape) {
+  .min-h-screen {
+    min-height: 100vh;
+    min-height: -webkit-fill-available;
+  }
+
+  /* Reduce vertical spacing in landscape */
+  .space-y-6>*+* {
+    margin-top: 1rem;
+  }
+
+  .py-8 {
+    padding-top: 1rem;
+    padding-bottom: 1rem;
+  }
+}
+
+/* Touch action - prevent accidental zooming */
+html {
+  touch-action: manipulation;
+}
+
+/* Disable text selection on game elements */
+.no-select {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* Buzzer button special styles */
+.buzzer-button {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+.buzzer-button:active {
+  transform: scale(0.95);
+}
+
+/* QR Code container */
+.qr-container {
+  background: white;
+  padding: 1rem;
+  border-radius: 1rem;
+  display: inline-block;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+/* Input styling */
+input::placeholder {
+  color: rgba(255, 255, 255, 0.3);
+}
+
+input:focus {
+  outline: none;
+  border-color: #ec4899;
+}
+
+/* Timer warning animation */
+@keyframes timer-warning {
+
+  0%,
+  100% {
+    color: #ef4444;
+    transform: scale(1);
+  }
+
+  50% {
+    color: #f97316;
+    transform: scale(1.1);
+  }
+}
+
+.timer-warning {
+  animation: timer-warning 0.5s ease-in-out infinite;
+}
+
+/* Loading spinner */
+.spinner {
+  border: 4px solid rgba(255, 255, 255, 0.1);
+  border-left-color: #ec4899;
+  border-radius: 50%;
+  width: 48px;
+  height: 48px;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Podium animation */
+@keyframes podium-rise {
+  from {
+    transform: scaleY(0);
+    transform-origin: bottom;
+  }
+
+  to {
+    transform: scaleY(1);
+    transform-origin: bottom;
+  }
+}
+
+.podium-rise {
+  animation: podium-rise 0.5s ease-out;
+}
+
+/* Confetti effect (for celebrations) */
+@keyframes confetti-fall {
+  0% {
+    transform: translateY(-100vh) rotate(0deg);
+    opacity: 1;
+  }
+
+  100% {
+    transform: translateY(100vh) rotate(720deg);
+    opacity: 0;
+  }
+}
+
+.confetti {
+  position: fixed;
+  width: 10px;
+  height: 10px;
+  animation: confetti-fall 3s linear infinite;
+}
+
+/* Slide-in animations for reactions */
+@keyframes slide-in-right {
+  from {
+    transform: translateX(100px);
+    opacity: 0;
+  }
+
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@keyframes slide-in-left {
+  from {
+    transform: translateX(-100px);
+    opacity: 0;
+  }
+
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+.animate-slide-in-right {
+  animation: slide-in-right 0.3s ease-out;
+}
+
+.animate-slide-in-left {
+  animation: slide-in-left 0.3s ease-out;
+}

@@ -1,0 +1,7 @@
+{
+  "name": "Silvester Party: Pub Quiz & Chaos Bingo",
+  "description": "An interactive New Year's Eve party game featuring an AI Moderator with Turkish and German voice support, Pub Quiz, and Chaos Bingo.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}

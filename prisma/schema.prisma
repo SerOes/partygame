@@ -1,0 +1,127 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+// Admin-User (Host)
+model Admin {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  createdAt    DateTime @default(now())
+}
+
+// App-weite Einstellungen (inkl. API-Key)
+model Settings {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// Kategorien für Quiz
+model Category {
+  id     String @id @default(cuid())
+  nameDE String
+  nameTR String
+  icon   String
+}
+
+// Spielsitzung
+model GameSession {
+  id                  String   @id @default(cuid())
+  joinCode            String   @unique
+  language            String   @default("de")
+  phase               String   @default("LOBBY") // LOBBY, CATEGORY_SELECT, QUIZ, BREAK, BINGO, LEADERBOARD, FINISHED
+  currentRound        Int      @default(0)
+  currentQuestion     Int      @default(0)
+  currentCategory     Int      @default(0)
+  selectedCategories  String   @default("[]") // JSON array of category IDs
+  gameType            String   @default("QUIZ") // QUIZ or BINGO
+  ttsEnabled          Boolean  @default(true)
+  showAnswers         Boolean  @default(false) // Antworten erst am Ende zeigen
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+  teams               Team[]
+  questions           Question[]
+  answers             PlayerAnswer[]
+}
+
+// Team (Spieler)
+model Team {
+  id          String         @id @default(cuid())
+  realName    String
+  secretName  String
+  score       Int            @default(0)
+  avatar      String?        // Base64 Nano Banana Bild
+  isHost      Boolean        @default(false)
+  sessionId   String
+  session     GameSession    @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  answers     PlayerAnswer[]
+  createdAt   DateTime       @default(now())
+}
+
+// Quiz-Fragen (pro Session generiert)
+model Question {
+  id            String         @id @default(cuid())
+  sessionId     String
+  session       GameSession    @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  categoryId    String
+  question      String
+  options       String         // JSON array
+  correctIndex  Int
+  questionIndex Int            // 0-9 innerhalb der Kategorie
+  answers       PlayerAnswer[]
+  createdAt     DateTime       @default(now())
+}
+
+// Spieler-Antworten (für Speed-Bonus)
+model PlayerAnswer {
+  id          String      @id @default(cuid())
+  teamId      String
+  team        Team        @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  questionId  String
+  question    Question    @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  sessionId   String
+  session     GameSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  answerIndex Int
+  isCorrect   Boolean
+  speedRank   Int         @default(0) // 1 = schnellster, 2 = zweiter, etc.
+  points      Int         @default(0)
+  answeredAt  DateTime    @default(now())
+}
+
+// Bingo-Grid
+model BingoGrid {
+  id          String   @id @default(cuid())
+  sessionId   String
+  categories  String   // JSON array of 9 categories
+  cellStatus  String   @default("[]") // JSON array of cell states
+  createdAt   DateTime @default(now())
+}
+
+// Pre-seeded Questions (100 per category for random selection)
+model SeededQuestion {
+  id            String   @id @default(cuid())
+  categoryId    String
+  questionDE    String
+  questionTR    String
+  optionA_DE    String
+  optionA_TR    String
+  optionB_DE    String
+  optionB_TR    String
+  optionC_DE    String
+  optionC_TR    String
+  optionD_DE    String
+  optionD_TR    String
+  correctIndex  Int
+  createdAt     DateTime @default(now())
+}
