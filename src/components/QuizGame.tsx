@@ -292,7 +292,11 @@ const QuizGame: React.FC<QuizGameProps> = ({ isAdmin }) => {
         });
 
         socket.on('answers-revealed', () => {
-            // Navigate to leaderboard
+            // Hide any overlay so App.tsx can render the Leaderboard
+            setShowScoreboard(false);
+            setShowBreak(false);
+            // Force update isLoading to ensure proper state
+            setIsLoading(false);
         });
     };
 

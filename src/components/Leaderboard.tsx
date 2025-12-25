@@ -3,7 +3,8 @@ import { useGameStore, api, Team } from '../stores/gameStore';
 
 const Leaderboard: React.FC = () => {
     const { session, setPhase, setModeratorText } = useGameStore();
-    const [showRealNames, setShowRealNames] = useState(false);
+    // Show real names by default in final leaderboard
+    const [showRealNames, setShowRealNames] = useState(true);
 
     const language = session?.language || 'de';
     const t = {
