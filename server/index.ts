@@ -1443,6 +1443,73 @@ io.on('connection', (socket) => {
     io.to(data.sessionId).emit('bingo-winner', { teamId: data.teamId });
   });
 
+  // ========== GOLDEN SHOWDOWN EVENTS ==========
+
+  // Start Golden Showdown (triggered when grid full + top 2 teams tied)
+  socket.on('showdown-start', async (data: {
+    sessionId: string;
+    teamAId: string;
+    teamBId: string
+  }) => {
+    console.log(`🥇 GOLDEN SHOWDOWN! ${data.teamAId} vs ${data.teamBId}`);
+
+    // Fetch team details
+    const teamA = await prisma.team.findUnique({ where: { id: data.teamAId } });
+    const teamB = await prisma.team.findUnique({ where: { id: data.teamBId } });
+
+    // Random first performer
+    const firstPerformer = Math.random() > 0.5 ? 'A' : 'B';
+
+    io.to(data.sessionId).emit('showdown-started', {
+      teamA,
+      teamB,
+      firstPerformer,
+      score: { a: 0, b: 0 },
+      round: 1
+    });
+  });
+
+  // Start a showdown round with a card
+  socket.on('showdown-round-start', (data: {
+    sessionId: string;
+    round: number;
+    card: { term: string; forbiddenWords: string[]; type: string; category: string };
+    performer: 'A' | 'B'
+  }) => {
+    console.log(`🎯 Showdown round ${data.round} started`);
+    io.to(data.sessionId).emit('showdown-round-started', {
+      round: data.round,
+      card: data.card,
+      performer: data.performer
+    });
+  });
+
+  // Showdown correct - performer wins the point
+  socket.on('showdown-correct', (data: { sessionId: string; round: number; winner: 'A' | 'B' }) => {
+    console.log(`✅ Showdown round ${data.round} won by Team ${data.winner}`);
+    io.to(data.sessionId).emit('showdown-point', { winner: data.winner, round: data.round });
+  });
+
+  // Showdown fail - opponent wins the point (sudden death!)
+  socket.on('showdown-fail', (data: { sessionId: string; round: number; performer: 'A' | 'B' }) => {
+    const winner = data.performer === 'A' ? 'B' : 'A';
+    console.log(`❌ Showdown round ${data.round} - Performer ${data.performer} failed, ${winner} wins!`);
+    io.to(data.sessionId).emit('showdown-point', { winner, round: data.round });
+  });
+
+  // Showdown final winner
+  socket.on('showdown-winner', async (data: { sessionId: string; teamId: string }) => {
+    console.log(`🏆 SHOWDOWN WINNER! Team ${data.teamId}`);
+
+    // Award mega bonus
+    await prisma.team.update({
+      where: { id: data.teamId },
+      data: { score: { increment: 1000 } }
+    });
+
+    io.to(data.sessionId).emit('showdown-finished', { winnerTeamId: data.teamId });
+  });
+
   // Emoji reactions during quiz
   socket.on('send-reaction', (data: { sessionId: string; emoji: string; teamName: string }) => {
     io.to(data.sessionId).emit('reaction-received', {

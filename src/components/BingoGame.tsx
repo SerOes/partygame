@@ -84,6 +84,14 @@ const BingoGame: React.FC<BingoGameProps> = ({ isAdmin }) => {
     const [showWinner, setShowWinner] = useState<Team | null>(null);
     const [isLoading, setIsLoading] = useState(true);
 
+    // Golden Showdown state
+    const [gameMode, setGameMode] = useState<'NORMAL' | 'SHOWDOWN'>('NORMAL');
+    const [showdownRound, setShowdownRound] = useState(0); // 1, 2, or 3
+    const [showdownScore, setShowdownScore] = useState<{ a: number; b: number }>({ a: 0, b: 0 });
+    const [showdownFinalists, setShowdownFinalists] = useState<{ teamA: Team | null; teamB: Team | null }>({ teamA: null, teamB: null });
+    const [showdownPerformer, setShowdownPerformer] = useState<'A' | 'B'>('A');
+    const [showdownCard, setShowdownCard] = useState<TabooCard | null>(null);
+
     const language = (session?.language || 'de') as 'de' | 'tr';
     const teams = session?.teams || [];
     const activeTeam = teams[currentTurnTeamIndex];
@@ -261,6 +269,62 @@ const BingoGame: React.FC<BingoGameProps> = ({ isAdmin }) => {
             const winner = teams.find(t => t.id === data.teamId);
             if (winner) setShowWinner(winner);
         });
+
+        // ========== GOLDEN SHOWDOWN LISTENERS ==========
+
+        // Showdown started - switch to showdown mode
+        socket.on('showdown-started', (data: {
+            teamA: Team;
+            teamB: Team;
+            firstPerformer: 'A' | 'B';
+            score: { a: number; b: number };
+            round: number;
+        }) => {
+            console.log('🥇 GOLDEN SHOWDOWN STARTED!');
+            setGameMode('SHOWDOWN');
+            setShowdownFinalists({ teamA: data.teamA, teamB: data.teamB });
+            setShowdownPerformer(data.firstPerformer);
+            setShowdownScore(data.score);
+            setShowdownRound(data.round);
+            setTurnPhase('WAITING');
+        });
+
+        // Showdown round started with card
+        socket.on('showdown-round-started', (data: {
+            round: number;
+            card: TabooCard;
+            performer: 'A' | 'B';
+        }) => {
+            setShowdownRound(data.round);
+            setShowdownCard(data.card);
+            setShowdownPerformer(data.performer);
+            setTurnPhase('PERFORMING');
+            setTimer(60);
+            setTimerActive(true);
+        });
+
+        // Showdown point scored
+        socket.on('showdown-point', (data: { winner: 'A' | 'B'; round: number }) => {
+            setTimerActive(false);
+            setShowdownScore(prev => ({
+                a: data.winner === 'A' ? prev.a + 1 : prev.a,
+                b: data.winner === 'B' ? prev.b + 1 : prev.b
+            }));
+            // Check for winner (first to 2)
+            setTimeout(() => {
+                setShowdownCard(null);
+                setTurnPhase('WAITING');
+            }, 2000);
+        });
+
+        // Showdown finished - declare winner
+        socket.on('showdown-finished', (data: { winnerTeamId: string }) => {
+            const winner = teams.find(t => t.id === data.winnerTeamId)
+                || showdownFinalists.teamA?.id === data.winnerTeamId
+                ? showdownFinalists.teamA
+                : showdownFinalists.teamB;
+            if (winner) setShowWinner(winner);
+        });
     };
 
     const cleanupSocketListeners = () => {
@@ -272,6 +336,11 @@ const BingoGame: React.FC<BingoGameProps> = ({ isAdmin }) => {
         socket.off('bingo-correct');
         socket.off('bingo-timeout');
         socket.off('bingo-winner');
+        // Showdown listeners
+        socket.off('showdown-started');
+        socket.off('showdown-round-started');
+        socket.off('showdown-point');
+        socket.off('showdown-finished');
     };
 
     const playBuzzerSound = () => {
@@ -391,16 +460,33 @@ const BingoGame: React.FC<BingoGameProps> = ({ isAdmin }) => {
             }
         }
 
-        // Check if grid is full
+        // Check if grid is full - trigger showdown if tied
         const filledCells = grid.filter(c => c.status === 'won' || c.status === 'locked').length;
         if (filledCells === 9) {
-            // Find team with most cells
+            // Count cells per team
             const teamCounts = teams.map(team => ({
                 team,
                 count: grid.filter(c => c.status === 'won' && c.wonByTeamId === team.id).length
-            }));
-            const maxCount = Math.max(...teamCounts.map(tc => tc.count));
-            const winner = teamCounts.find(tc => tc.count === maxCount)?.team;
+            })).sort((a, b) => b.count - a.count);
+
+            const topCount = teamCounts[0]?.count || 0;
+            const secondCount = teamCounts[1]?.count || 0;
+
+            // If top 2 teams are tied, start Golden Showdown!
+            if (topCount === secondCount && topCount > 0 && teamCounts.length >= 2) {
+                console.log('⚖️ TIE! Starting Golden Showdown...');
+                if (socket && session) {
+                    socket.emit('showdown-start', {
+                        sessionId: session.id,
+                        teamAId: teamCounts[0].team.id,
+                        teamBId: teamCounts[1].team.id
+                    });
+                }
+                return;
+            }
+
+            // Otherwise, declare winner (team with most cells)
+            const winner = teamCounts[0]?.team;
             if (winner) setShowWinner(winner);
         }
     };
@@ -420,6 +506,222 @@ const BingoGame: React.FC<BingoGameProps> = ({ isAdmin }) => {
             <div className="flex flex-col items-center justify-center min-h-[60vh]">
                 <div className="animate-spin w-12 h-12 border-4 border-orange-500 border-t-transparent rounded-full mb-4"></div>
                 <p className="text-xl text-white/60">{t.loading}</p>
+            </div>
+        );
+    }
+
+    // ========== GOLDEN SHOWDOWN MODE ==========
+    if (gameMode === 'SHOWDOWN') {
+        const performerTeam = showdownPerformer === 'A' ? showdownFinalists.teamA : showdownFinalists.teamB;
+        const defenderTeam = showdownPerformer === 'A' ? showdownFinalists.teamB : showdownFinalists.teamA;
+        const isMyShowdownTurn = performerTeam?.id === currentTeamId;
+
+        return (
+            <div className="max-w-3xl mx-auto px-4 py-6 text-center">
+                {/* Dark Spotlight Header */}
+                <div className="mb-6">
+                    <h2 className="text-4xl font-titan text-yellow-400 neon-glow animate-pulse">
+                        ⚔️ GOLDEN SHOWDOWN ⚔️
+                    </h2>
+                    <p className="text-lg text-white/60 mt-2">Best of 3 - Erster mit 2 Punkten gewinnt!</p>
+                </div>
+
+                {/* Scoreboard */}
+                <div className="flex justify-center items-center gap-8 mb-8">
+                    <div className={`glass p-4 rounded-2xl min-w-[150px] ${showdownPerformer === 'A' ? 'ring-2 ring-yellow-400' : ''}`}>
+                        {showdownFinalists.teamA?.avatar ? (
+                            <img src={showdownFinalists.teamA.avatar} alt="" className="w-16 h-16 rounded-full mx-auto mb-2" />
+                        ) : (
+                            <div className="w-16 h-16 rounded-full bg-gradient-to-br from-pink-500 to-orange-500 flex items-center justify-center text-2xl font-titan mx-auto mb-2">
+                                {showdownFinalists.teamA?.secretName?.[0]}
+                            </div>
+                        )}
+                        <p className="text-cyan-400 font-bold">{showdownFinalists.teamA?.realName}</p>
+                        <p className="text-5xl font-titan text-yellow-400">{showdownScore.a}</p>
+                    </div>
+
+                    <div className="text-4xl font-titan text-white/40">VS</div>
+
+                    <div className={`glass p-4 rounded-2xl min-w-[150px] ${showdownPerformer === 'B' ? 'ring-2 ring-yellow-400' : ''}`}>
+                        {showdownFinalists.teamB?.avatar ? (
+                            <img src={showdownFinalists.teamB.avatar} alt="" className="w-16 h-16 rounded-full mx-auto mb-2" />
+                        ) : (
+                            <div className="w-16 h-16 rounded-full bg-gradient-to-br from-cyan-500 to-blue-500 flex items-center justify-center text-2xl font-titan mx-auto mb-2">
+                                {showdownFinalists.teamB?.secretName?.[0]}
+                            </div>
+                        )}
+                        <p className="text-cyan-400 font-bold">{showdownFinalists.teamB?.realName}</p>
+                        <p className="text-5xl font-titan text-yellow-400">{showdownScore.b}</p>
+                    </div>
+                </div>
+
+                {/* 3 Golden Cards */}
+                <div className="flex justify-center gap-4 mb-8">
+                    {[1, 2, 3].map(cardNum => (
+                        <div
+                            key={cardNum}
+                            className={`w-24 h-32 rounded-xl flex items-center justify-center text-3xl font-titan ${cardNum < showdownRound
+                                    ? 'bg-gray-600/50 text-gray-500'
+                                    : cardNum === showdownRound
+                                        ? 'bg-gradient-to-br from-yellow-400 to-orange-500 text-black animate-pulse shadow-lg shadow-yellow-500/50'
+                                        : 'bg-gradient-to-br from-yellow-600 to-yellow-800 text-yellow-200'
+                                }`}
+                        >
+                            {cardNum}
+                        </div>
+                    ))}
+                </div>
+
+                {/* Timer */}
+                {turnPhase === 'PERFORMING' && (
+                    <div className={`text-6xl font-titan mb-6 ${timer <= 10 ? 'text-red-500 animate-pulse' : 'text-yellow-400'}`}>
+                        {timer}s
+                    </div>
+                )}
+
+                {/* Current Performer */}
+                <div className="glass rounded-2xl p-4 mb-6">
+                    <p className="text-white/60">Runde {showdownRound}/3</p>
+                    <p className="text-xl text-yellow-400 font-bold">
+                        🎭 {performerTeam?.realName} führt durch
+                    </p>
+                    {isMyShowdownTurn && (
+                        <p className="text-green-400 mt-2">➡️ DU bist dran!</p>
+                    )}
+                </div>
+
+                {/* Showdown Card (if active) */}
+                {showdownCard && (
+                    <div className="glass p-6 rounded-3xl border-2 border-yellow-500/50 mb-6">
+                        <div className="flex items-center justify-center gap-3 mb-4">
+                            <span className="text-4xl">{ACTIVITY_ICONS[showdownCard.type]}</span>
+                            <span className="text-2xl font-titan text-yellow-400">
+                                {ACTIVITY_NAMES[language][showdownCard.type as keyof typeof ACTIVITY_NAMES['de']]}
+                            </span>
+                        </div>
+
+                        {/* Performer sees only term */}
+                        {isMyShowdownTurn && (
+                            <div className="bg-white/10 rounded-2xl p-4">
+                                <div className="text-4xl font-bold text-white">{showdownCard.term}</div>
+                            </div>
+                        )}
+
+                        {/* Defender/Jury sees forbidden words */}
+                        {!isMyShowdownTurn && showdownCard.type === 'EXPLAIN' && (
+                            <div>
+                                <div className="bg-white/10 rounded-2xl p-4 mb-4">
+                                    <div className="text-4xl font-bold text-white">{showdownCard.term}</div>
+                                </div>
+                                <div className="text-red-400 text-sm font-bold mb-2">🚫 VERBOTEN:</div>
+                                <div className="flex flex-wrap gap-2 justify-center">
+                                    {showdownCard.forbiddenWords.map((w, i) => (
+                                        <span key={i} className="px-3 py-1 bg-red-500/20 text-red-400 rounded-full text-sm font-bold">
+                                            {w}
+                                        </span>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Buzzer for defender */}
+                        {!isMyShowdownTurn && turnPhase === 'PERFORMING' && (
+                            <button
+                                onClick={() => socket?.emit('showdown-fail', {
+                                    sessionId: session?.id,
+                                    round: showdownRound,
+                                    performer: showdownPerformer
+                                })}
+                                className="mt-6 w-32 h-32 bg-red-600 rounded-full shadow-[0_0_50px_rgba(220,38,38,0.5)] flex items-center justify-center border-8 border-red-900 active:scale-95 transition-transform mx-auto"
+                            >
+                                <span className="text-white font-titan text-xl">🚨 BUZZ!</span>
+                            </button>
+                        )}
+                    </div>
+                )}
+
+                {/* Host Controls */}
+                {isAdmin && (
+                    <div className="flex flex-wrap justify-center gap-4">
+                        {turnPhase === 'WAITING' && showdownRound < 3 && (
+                            <button
+                                onClick={() => {
+                                    const card: TabooCard = {
+                                        term: `Showdown Begriff ${showdownRound + 1}`,
+                                        forbiddenWords: ['Wort1', 'Wort2', 'Wort3'],
+                                        type: ['PANTOMIME', 'DRAW'][Math.floor(Math.random() * 2)],
+                                        category: 'showdown'
+                                    };
+                                    const nextPerformer = showdownRound % 2 === 0 ? 'B' : 'A';
+                                    socket?.emit('showdown-round-start', {
+                                        sessionId: session?.id,
+                                        round: showdownRound + 1,
+                                        card,
+                                        performer: nextPerformer
+                                    });
+                                }}
+                                className="px-8 py-4 bg-yellow-500 hover:bg-yellow-400 text-black font-titan text-xl rounded-full"
+                            >
+                                ▶ Runde {showdownRound + 1} starten
+                            </button>
+                        )}
+
+                        {turnPhase === 'PERFORMING' && (
+                            <>
+                                <button
+                                    onClick={() => {
+                                        socket?.emit('showdown-correct', {
+                                            sessionId: session?.id,
+                                            round: showdownRound,
+                                            winner: showdownPerformer
+                                        });
+                                        // Check if winner
+                                        const newScore = {
+                                            a: showdownPerformer === 'A' ? showdownScore.a + 1 : showdownScore.a,
+                                            b: showdownPerformer === 'B' ? showdownScore.b + 1 : showdownScore.b
+                                        };
+                                        if (newScore.a >= 2) {
+                                            socket?.emit('showdown-winner', { sessionId: session?.id, teamId: showdownFinalists.teamA?.id });
+                                        } else if (newScore.b >= 2) {
+                                            socket?.emit('showdown-winner', { sessionId: session?.id, teamId: showdownFinalists.teamB?.id });
+                                        }
+                                    }}
+                                    className="px-8 py-4 bg-green-500 hover:bg-green-400 text-white font-titan text-xl rounded-full"
+                                >
+                                    ✓ RICHTIG!
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        socket?.emit('showdown-fail', {
+                                            sessionId: session?.id,
+                                            round: showdownRound,
+                                            performer: showdownPerformer
+                                        });
+                                        // Opponent wins the point (sudden death!)
+                                        const opponent = showdownPerformer === 'A' ? 'B' : 'A';
+                                        const newScore = {
+                                            a: opponent === 'A' ? showdownScore.a + 1 : showdownScore.a,
+                                            b: opponent === 'B' ? showdownScore.b + 1 : showdownScore.b
+                                        };
+                                        if (newScore.a >= 2) {
+                                            socket?.emit('showdown-winner', { sessionId: session?.id, teamId: showdownFinalists.teamA?.id });
+                                        } else if (newScore.b >= 2) {
+                                            socket?.emit('showdown-winner', { sessionId: session?.id, teamId: showdownFinalists.teamB?.id });
+                                        }
+                                    }}
+                                    className="px-8 py-4 bg-red-500 hover:bg-red-400 text-white font-titan text-xl rounded-full"
+                                >
+                                    ✕ FALSCH!
+                                </button>
+                            </>
+                        )}
+                    </div>
+                )}
+
+                {/* Sudden Death Warning */}
+                <div className="mt-6 text-orange-400 text-sm">
+                    ⚠️ ACHTUNG: Bei Fehler geht der Punkt an den Gegner!
+                </div>
             </div>
         );
     }
