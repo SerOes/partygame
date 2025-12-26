@@ -31,55 +31,55 @@ function decrypt(text: string): string {
     return decrypted;
 }
 
-// Category prompts for funny Nano Banana style images
+// Category prompts for funny cartoon people with German labels
 const CATEGORY_PROMPTS = [
     {
         id: 'filme_serien',
-        prompt: 'A cute cartoon banana character dressed as a movie director with a clapboard and film reel, Hollywood style, fun party game icon, vibrant colors, simple background'
+        prompt: 'Lustiger Cartoon-Charakter als Regisseur mit Filmklappe und Popcorn, Hollywood-Stil, "FILME" Text, bunter Party-Spielkarten-Stil, fröhliche Farben'
     },
     {
         id: 'musik_hits',
-        prompt: 'A cute cartoon banana character wearing headphones and playing electric guitar, rock star pose, music notes floating, fun party game icon, vibrant colors'
+        prompt: 'Lustiger Cartoon-Charakter als Rockstar mit E-Gitarre und Kopfhörern, Musiknoten fliegend, "MUSIK" Text, bunter Party-Spielkarten-Stil'
     },
     {
         id: 'sport',
-        prompt: 'A cute cartoon banana character as an athlete holding a soccer ball and wearing a gold medal, sports theme, fun party game icon, vibrant colors'
+        prompt: 'Lustiger Cartoon-Charakter als Sportler mit Fußball und Goldmedaille, Sportler-Outfit, "SPORT" Text, bunter Party-Spielkarten-Stil'
     },
     {
         id: 'weltgeschehen',
-        prompt: 'A cute cartoon banana character as a news reporter holding a microphone with a globe in background, world news theme, fun party game icon, vibrant colors'
+        prompt: 'Lustiger Cartoon-Charakter als Nachrichtenreporter mit Mikrofon und Weltkugel, "WELT" Text, bunter Party-Spielkarten-Stil'
     },
     {
         id: 'oesterreich',
-        prompt: 'A cute cartoon banana character wearing traditional Austrian dirndl/lederhosen, with Alps in background, Austrian flag colors, fun party game icon'
+        prompt: 'Lustiger Cartoon-Charakter in Tracht (Dirndl/Lederhosen) vor Alpenpanorama, österreichische Flagge, "ÖSTERREICH" Text, bunter Party-Spielkarten-Stil'
     },
     {
         id: 'tuerkei',
-        prompt: 'A cute cartoon banana character wearing a fez hat and holding Turkish tea, with mosque silhouette in background, Turkish flag colors, fun party game icon'
+        prompt: 'Lustiger Cartoon-Charakter mit Fez-Hut und türkischem Tee, Moschee im Hintergrund, türkische Flagge, "TÜRKEI" Text, bunter Party-Spielkarten-Stil'
     },
     {
         id: 'tech_gaming',
-        prompt: 'A cute cartoon banana character as a gamer with VR headset and gaming controller, neon cyberpunk colors, fun party game icon, tech vibes'
+        prompt: 'Lustiger Cartoon-Charakter als Gamer mit VR-Brille und Controller, Neon-Farben, "GAMING" Text, bunter Party-Spielkarten-Stil'
     },
     {
         id: 'popkultur',
-        prompt: 'A cute cartoon banana character taking a selfie with smartphone, social media icons floating, influencer style, fun party game icon, trendy'
+        prompt: 'Lustiger Cartoon-Charakter als Influencer mit Smartphone und Selfie-Pose, Social-Media-Icons, "POP" Text, bunter Party-Spielkarten-Stil'
     },
     {
         id: 'prominente',
-        prompt: 'A cute cartoon banana character walking on red carpet with sunglasses and paparazzi cameras flashing, celebrity star style, fun party game icon'
+        prompt: 'Lustiger Cartoon-Charakter als Star auf rotem Teppich mit Sonnenbrille, Blitzlichter, "STARS" Text, bunter Party-Spielkarten-Stil'
     },
     {
         id: 'essen_trinken',
-        prompt: 'A cute cartoon banana character as a chef with chef hat, holding a pizza and wine glass, food theme, fun party game icon, delicious colors'
+        prompt: 'Lustiger Cartoon-Charakter als Koch mit Kochmütze, Pizza und Weinglas, "ESSEN" Text, bunter Party-Spielkarten-Stil'
     },
     {
         id: 'silvester',
-        prompt: 'A cute cartoon banana character celebrating New Year with champagne, fireworks in background, party hat and confetti, fun party game icon'
+        prompt: 'Lustiger Cartoon-Charakter mit Sektglas und Partyhut, Feuerwerk im Hintergrund, Konfetti, "SILVESTER" Text, bunter Party-Spielkarten-Stil'
     },
     {
         id: 'wissenschaft',
-        prompt: 'A cute cartoon banana character as a scientist with lab coat, holding a beaker with bubbling liquid, DNA helix in background, fun party game icon'
+        prompt: 'Lustiger Cartoon-Charakter als Wissenschaftler mit Laborkittel und Reagenzglas, DNA-Helix, "WISSEN" Text, bunter Party-Spielkarten-Stil'
     },
 ];
 
