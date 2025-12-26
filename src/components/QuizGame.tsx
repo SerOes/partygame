@@ -306,8 +306,8 @@ const QuizGame: React.FC<QuizGameProps> = ({ isAdmin }) => {
             setMessages(prev => [...prev, data]);
         });
 
-        socket.on('answers-revealed', () => {
-            console.log('📣 [QuizGame] answers-revealed event received');
+        socket.on('answers-revealed', (data: { teams?: any[] }) => {
+            console.log('📣 [QuizGame] answers-revealed event received with teams:', data?.teams?.length);
             // Directly update the phase in gameStore (bypassing the broken gameStore socket listener)
             console.log('📣 [QuizGame] Setting phase to LEADERBOARD directly');
             setPhase('LEADERBOARD');

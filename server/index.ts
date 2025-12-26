@@ -1046,12 +1046,24 @@ io.on('connection', (socket) => {
 
   socket.on('reveal-answers', async (sessionId: string) => {
     console.log('🏁 [Server] reveal-answers received for session:', sessionId);
+
+    // Update session phase
     await prisma.gameSession.update({
       where: { id: sessionId },
       data: { showAnswers: true, phase: 'LEADERBOARD' }
     });
-    console.log('🏁 [Server] DB updated, phase set to LEADERBOARD, emitting answers-revealed');
-    io.to(sessionId).emit('answers-revealed');
+
+    // Fetch fresh team data with updated scores
+    const teams = await prisma.team.findMany({
+      where: { sessionId },
+      orderBy: { score: 'desc' }
+    });
+
+    console.log('🏁 [Server] Fetched teams with scores:', teams.map(t => `${t.realName}: ${t.score}`));
+    console.log('🏁 [Server] DB updated, phase set to LEADERBOARD, emitting answers-revealed with teams');
+
+    // Include fresh team data in the event
+    io.to(sessionId).emit('answers-revealed', { teams });
     console.log('🏁 [Server] answers-revealed emitted to session:', sessionId);
   });
 

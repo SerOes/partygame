@@ -170,13 +170,21 @@ export const useGameStore = create<GameState>((set, get) => ({
             }
         });
 
-        socket.on('answers-revealed', () => {
-            console.log('📣 [gameStore] answers-revealed event received');
+        socket.on('answers-revealed', ({ teams }: { teams?: Team[] }) => {
+            console.log('📣 [gameStore] answers-revealed event received with teams:', teams?.length);
             const { session } = get();
             if (session) {
                 console.log('📣 [gameStore] Setting phase to LEADERBOARD, current phase:', session.phase);
-                set({ session: { ...session, showAnswers: true, phase: 'LEADERBOARD' } });
-                console.log('📣 [gameStore] Phase updated to LEADERBOARD');
+                // Update both phase and teams with fresh score data
+                set({
+                    session: {
+                        ...session,
+                        showAnswers: true,
+                        phase: 'LEADERBOARD',
+                        teams: teams || session.teams  // Use fresh teams if provided
+                    }
+                });
+                console.log('📣 [gameStore] Phase updated to LEADERBOARD with fresh team scores');
             } else {
                 console.log('❌ [gameStore] No session found in answers-revealed handler');
             }
