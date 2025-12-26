@@ -25,19 +25,19 @@ const CategorySelect: React.FC<CategorySelectProps> = ({ isAdmin, onCategoriesSe
     const t = {
         de: {
             title: 'KATEGORIEN WÄHLEN',
-            subtitle: 'Der Host wählt 5 von 12 Kategorien',
+            subtitle: 'Wähle mindestens 1 Kategorie',
             selected: 'ausgewählt',
             start: 'SPIEL STARTEN',
             waiting: 'Warte auf Host...',
-            selectMore: 'Noch'
+            selectMin: 'Wähle mind. 1 Kategorie'
         },
         tr: {
             title: 'KATEGORİ SEÇ',
-            subtitle: 'Host 12 kategoriden 5 tanesini seçer',
+            subtitle: 'En az 1 kategori seç',
             selected: 'seçildi',
             start: 'OYUNU BAŞLAT',
             waiting: 'Host bekleniyor...',
-            selectMore: 'Kalan'
+            selectMin: 'En az 1 kategori seç'
         }
     }[language];
 
@@ -80,10 +80,9 @@ const CategorySelect: React.FC<CategorySelectProps> = ({ isAdmin, onCategoriesSe
 
         if (isCurrentlySelected) {
             setSelectedIds(selectedIds.filter(i => i !== id));
-        } else if (selectedIds.length < 5) {
-            setSelectedIds([...selectedIds, id]);
         } else {
-            return; // Can't select more than 5
+            // No maximum limit - can select any number of categories
+            setSelectedIds([...selectedIds, id]);
         }
 
         // Broadcast to all players in real-time
@@ -97,7 +96,8 @@ const CategorySelect: React.FC<CategorySelectProps> = ({ isAdmin, onCategoriesSe
     };
 
     const handleStart = () => {
-        if (selectedIds.length === 5) {
+        // Require at least 1 category
+        if (selectedIds.length >= 1) {
             onCategoriesSelected(selectedIds);
         }
     };
@@ -116,8 +116,8 @@ const CategorySelect: React.FC<CategorySelectProps> = ({ isAdmin, onCategoriesSe
                 <h2 className="text-4xl font-titan text-pink-500 neon-glow mb-2">{t.title}</h2>
                 <p className="text-white/60">{t.subtitle}</p>
                 <div className="mt-4 inline-block glass px-6 py-2 rounded-full">
-                    <span className={selectedIds.length === 5 ? 'text-green-400' : 'text-yellow-400'}>
-                        {selectedIds.length}/5 {t.selected}
+                    <span className={selectedIds.length >= 1 ? 'text-green-400' : 'text-yellow-400'}>
+                        {selectedIds.length} {t.selected}
                     </span>
                 </div>
             </div>
@@ -125,7 +125,7 @@ const CategorySelect: React.FC<CategorySelectProps> = ({ isAdmin, onCategoriesSe
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 mb-8">
                 {categories.map((cat) => {
                     const isSelected = selectedIds.includes(cat.id);
-                    const canSelect = isAdmin && (isSelected || selectedIds.length < 5);
+                    const canSelect = isAdmin; // No limit on selection
 
                     return (
                         <button
@@ -154,13 +154,13 @@ const CategorySelect: React.FC<CategorySelectProps> = ({ isAdmin, onCategoriesSe
             {isAdmin ? (
                 <button
                     onClick={handleStart}
-                    disabled={selectedIds.length !== 5}
-                    className={`w-full py-5 font-titan text-xl rounded-full transition-all ${selectedIds.length === 5
+                    disabled={selectedIds.length < 1}
+                    className={`w-full py-5 font-titan text-xl rounded-full transition-all ${selectedIds.length >= 1
                         ? 'bg-green-500 hover:bg-green-400 text-white shadow-[0_0_30px_rgba(34,197,94,0.5)]'
                         : 'bg-gray-700 text-gray-400 cursor-not-allowed'
                         }`}
                 >
-                    {selectedIds.length === 5 ? `🚀 ${t.start}` : `${t.selectMore} ${5 - selectedIds.length}`}
+                    {selectedIds.length >= 1 ? `🚀 ${t.start}` : t.selectMin}
                 </button>
             ) : (
                 <div className="text-center glass p-4 rounded-xl">
