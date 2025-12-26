@@ -1307,6 +1307,50 @@ io.on('connection', (socket) => {
     console.log('🔍 CLIENT DEBUG:', data);
   });
 
+  // ========== TEAM DRAFT EVENTS ==========
+
+  // Player joins a faction (Team A or B)
+  socket.on('join-faction', async (data: { sessionId: string; teamId: string; faction: 'A' | 'B' }) => {
+    console.log(`🎯 Team ${data.teamId} joining faction ${data.faction}`);
+
+    try {
+      // Update team faction in DB
+      const updatedTeam = await prisma.team.update({
+        where: { id: data.teamId },
+        data: { faction: data.faction }
+      });
+
+      // Get all teams for this session and broadcast
+      const teams = await prisma.team.findMany({
+        where: { sessionId: data.sessionId }
+      });
+
+      io.to(data.sessionId).emit('teams-updated', { teams });
+    } catch (e) {
+      console.error('Failed to update faction:', e);
+    }
+  });
+
+  // Host confirms teams and starts Bingo
+  socket.on('confirm-teams', async (data: { sessionId: string; difficulty: number }) => {
+    console.log(`✅ Teams confirmed for session ${data.sessionId} with difficulty ${data.difficulty}`);
+
+    try {
+      // Save difficulty to session
+      await prisma.gameSession.update({
+        where: { id: data.sessionId },
+        data: {
+          phase: 'BINGO',
+          bingoDifficulty: data.difficulty
+        }
+      });
+
+      io.to(data.sessionId).emit('game-phase', { phase: 'BINGO' });
+    } catch (e) {
+      console.error('Failed to confirm teams:', e);
+    }
+  });
+
   // ========== BINGO GAME EVENTS ==========
 
   // Categories for Bingo grid

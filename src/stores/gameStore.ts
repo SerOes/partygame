@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { io, Socket } from 'socket.io-client';
 
 export type Language = 'de' | 'tr';
-export type GamePhase = 'LOBBY' | 'GAME_SELECT' | 'CATEGORY_SELECT' | 'QUIZ' | 'BREAK' | 'BINGO' | 'LEADERBOARD' | 'FINISHED';
+export type GamePhase = 'LOBBY' | 'GAME_SELECT' | 'LOBBY_DRAFT' | 'CATEGORY_SELECT' | 'QUIZ' | 'BREAK' | 'BINGO' | 'LEADERBOARD' | 'FINISHED';
 export type UserRole = 'admin' | 'player';
 
 export interface Team {
@@ -12,6 +12,7 @@ export interface Team {
     score: number;
     avatar?: string;
     isHost?: boolean;
+    faction?: 'A' | 'B' | null; // Team A (Red) or Team B (Blue)
 }
 
 export interface QuizQuestion {

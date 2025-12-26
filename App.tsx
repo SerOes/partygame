@@ -8,6 +8,7 @@ import PlayerJoin from './src/components/PlayerJoin';
 import QuizGame from './src/components/QuizGame';
 import BingoGame from './src/components/BingoGame';
 import GameDashboard from './src/components/GameDashboard';
+import TeamDraft from './src/components/TeamDraft';
 import Leaderboard from './src/components/Leaderboard';
 import Moderator from './components/Moderator';
 
@@ -140,7 +141,8 @@ const App: React.FC = () => {
         if (gameType === 'QUIZ') {
           setPhase('CATEGORY_SELECT');
         } else {
-          setPhase('BINGO');
+          // For BINGO, go to Team Draft first
+          setPhase('LOBBY_DRAFT');
         }
       }
     }
@@ -208,6 +210,8 @@ const App: React.FC = () => {
             <p className="text-white/60">{language === 'de' ? 'Host wählt das Spiel...' : 'Host oyun seçiyor...'}</p>
           </div>
         );
+      case 'LOBBY_DRAFT':
+        return <TeamDraft isAdmin={isAdmin} />;
       case 'CATEGORY_SELECT':
         return (
           <CategorySelect
