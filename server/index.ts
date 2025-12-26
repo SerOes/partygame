@@ -860,7 +860,7 @@ const BINGO_CATEGORIES = [
   { id: 'wissenschaft', nameDE: 'Wissenschaft 2025', nameTR: 'Bilim 2025' },
 ];
 
-const ACTIVITY_TYPES = ['EXPLAIN', 'PANTOMIME', 'DRAW', 'HUM'];
+const ACTIVITY_TYPES = ['EXPLAIN', 'PANTOMIME', 'DRAW'];
 
 app.post('/api/regenerate-bingo-cards', async (req, res) => {
   try {

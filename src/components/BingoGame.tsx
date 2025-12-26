@@ -10,27 +10,24 @@ interface BingoGameProps {
 const ACTIVITY_ICONS: Record<string, string> = {
     EXPLAIN: '🗣️',
     PANTOMIME: '🎭',
-    DRAW: '🎨',
-    HUM: '🎵'
+    DRAW: '🎨'
 };
 
 const ACTIVITY_NAMES = {
-    de: { EXPLAIN: 'Erklären', PANTOMIME: 'Pantomime', DRAW: 'Zeichnen', HUM: 'Summen' },
-    tr: { EXPLAIN: 'Açıkla', PANTOMIME: 'Pantomim', DRAW: 'Çiz', HUM: 'Mırılda' }
+    de: { EXPLAIN: 'Erklären', PANTOMIME: 'Pantomime', DRAW: 'Zeichnen' },
+    tr: { EXPLAIN: 'Açıkla', PANTOMIME: 'Pantomim', DRAW: 'Çiz' }
 };
 
 const ACTIVITY_RULES = {
     de: {
         EXPLAIN: '🗣️ Erkläre den Begriff, ohne die verbotenen Wörter zu benutzen!',
         PANTOMIME: '🎭 Stelle den Begriff nur mit Gesten dar – KEIN Sprechen!',
-        DRAW: '🎨 Zeichne den Begriff – keine Buchstaben oder Zahlen!',
-        HUM: '🎵 Summe die Melodie – kein Text, kein Singen!'
+        DRAW: '🎨 Zeichne den Begriff – keine Buchstaben oder Zahlen!'
     },
     tr: {
         EXPLAIN: '🗣️ Yasak kelimeleri kullanmadan terimi açıkla!',
         PANTOMIME: '🎭 Sadece hareketlerle anlat – KONUŞMA YOK!',
-        DRAW: '🎨 Terimi çiz – harf veya rakam yok!',
-        HUM: '🎵 Melodiyi mırılda – şarkı sözü yok!'
+        DRAW: '🎨 Terimi çiz – harf veya rakam yok!'
     }
 };
 
@@ -40,7 +37,7 @@ type CellStatus = 'empty' | 'active' | 'won' | 'locked';
 interface BingoCell {
     category: string;
     categoryIcon: string;
-    type: 'EXPLAIN' | 'PANTOMIME' | 'DRAW' | 'HUM';
+    type: 'EXPLAIN' | 'PANTOMIME' | 'DRAW';
     status: CellStatus;
     wonByTeamId?: string;
 }
@@ -162,7 +159,7 @@ const BingoGame: React.FC<BingoGameProps> = ({ isAdmin }) => {
     }, [timer, timerActive]);
 
     const initializeGrid = () => {
-        const types: Array<'EXPLAIN' | 'PANTOMIME' | 'DRAW' | 'HUM'> = ['EXPLAIN', 'PANTOMIME', 'DRAW', 'HUM'];
+        const types: Array<'EXPLAIN' | 'PANTOMIME' | 'DRAW'> = ['EXPLAIN', 'PANTOMIME', 'DRAW'];
         const shuffledCategories = [...CATEGORIES].sort(() => Math.random() - 0.5).slice(0, 9);
 
         const newGrid: BingoCell[] = shuffledCategories.map(cat => ({
