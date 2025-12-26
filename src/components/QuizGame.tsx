@@ -57,7 +57,7 @@ const QUICK_MESSAGES = [
 ];
 
 const QuizGame: React.FC<QuizGameProps> = ({ isAdmin }) => {
-    const { session, socket, currentTeamId, setModeratorText } = useGameStore();
+    const { session, socket, currentTeamId, setModeratorText, setPhase } = useGameStore();
 
     const [questions, setQuestions] = useState<Question[]>([]);
     const [currentIdx, setCurrentIdx] = useState(0);
@@ -308,6 +308,9 @@ const QuizGame: React.FC<QuizGameProps> = ({ isAdmin }) => {
 
         socket.on('answers-revealed', () => {
             console.log('📣 [QuizGame] answers-revealed event received');
+            // Directly update the phase in gameStore (bypassing the broken gameStore socket listener)
+            console.log('📣 [QuizGame] Setting phase to LEADERBOARD directly');
+            setPhase('LEADERBOARD');
             // Set transitioning state for ALL players (not just host)
             setIsTransitioningToLeaderboard(true);
             // Hide any overlay so App.tsx can render the Leaderboard
@@ -315,7 +318,7 @@ const QuizGame: React.FC<QuizGameProps> = ({ isAdmin }) => {
             setShowBreak(false);
             // Force update isLoading to ensure proper state
             setIsLoading(false);
-            console.log('📣 [QuizGame] States cleared: isTransitioningToLeaderboard=true, showScoreboard=false, showBreak=false, isLoading=false');
+            console.log('📣 [QuizGame] Phase set to LEADERBOARD, states cleared');
         });
     };
 
