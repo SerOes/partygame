@@ -7,6 +7,16 @@ import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { GoogleGenAI, Modality, Type } from '@google/genai';
+import * as fs from 'fs';
+
+// Debug log helper - writes to file for analysis
+const DEBUG_LOG_PATH = './debug-game.log';
+function debugLog(category: string, message: string, data?: any) {
+  const timestamp = new Date().toISOString();
+  const logLine = `[${timestamp}] [${category}] ${message}${data ? ' | DATA: ' + JSON.stringify(data) : ''}\n`;
+  console.log(logLine.trim());
+  fs.appendFileSync(DEBUG_LOG_PATH, logLine);
+}
 
 const app = express();
 const httpServer = createServer(app);
@@ -438,6 +448,8 @@ app.post('/api/sessions/:joinCode/join', async (req, res) => {
         sessionId: session.id
       }
     });
+
+    debugLog('TEAM_JOIN', `Team created for ${realName}`, { teamId: team.id, realName, secretName, sessionId: session.id, isHost });
 
     io.to(session.id).emit('team-joined', { team: { ...team, realName: undefined } }); // Hide real name from others
 
@@ -895,17 +907,21 @@ app.post('/api/sessions/:id/answer', async (req, res) => {
       }
     });
 
+    debugLog('ANSWER_SUBMIT', `Answer submitted`, { teamId, questionId, answerIndex, isCorrect, speedRank, points });
+
     // Update team score
     if (isCorrect) {
       await prisma.team.update({
         where: { id: teamId },
         data: { score: { increment: points } }
       });
+      debugLog('SCORE_UPDATE', `Team score updated`, { teamId, pointsAdded: points });
     }
 
     io.to(session.id).emit('answer-received', { teamId, speedRank });
     res.json({ answer, points, speedRank });
   } catch (error: any) {
+    debugLog('ANSWER_ERROR', `Answer submission failed`, { error: error.message });
     res.status(500).json({ error: error.message });
   }
 });
@@ -1059,12 +1075,12 @@ io.on('connection', (socket) => {
       orderBy: { score: 'desc' }
     });
 
-    console.log('🏁 [Server] Fetched teams with scores:', teams.map(t => `${t.realName}: ${t.score}`));
-    console.log('🏁 [Server] DB updated, phase set to LEADERBOARD, emitting answers-revealed with teams');
+    debugLog('REVEAL_ANSWERS', 'Fetched teams with scores', teams.map(t => ({ id: t.id, realName: t.realName, secretName: t.secretName, score: t.score })));
+    debugLog('REVEAL_ANSWERS', 'Emitting answers-revealed with teams to session', { sessionId, teamCount: teams.length });
 
     // Include fresh team data in the event
     io.to(sessionId).emit('answers-revealed', { teams });
-    console.log('🏁 [Server] answers-revealed emitted to session:', sessionId);
+    debugLog('REVEAL_ANSWERS', 'answers-revealed emitted', { sessionId });
   });
 
   // Real-time category toggle sync
