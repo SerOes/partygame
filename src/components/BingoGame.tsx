@@ -1,12 +1,12 @@
-import React, { useState, useEffect } from 'react';
-import { useGameStore, api, TabooWord, Team } from '../stores/gameStore';
+import React, { useState, useEffect, useCallback } from 'react';
+import { useGameStore, Team } from '../stores/gameStore';
 import Confetti from './Confetti';
 
 interface BingoGameProps {
     isAdmin: boolean;
 }
 
-// Activity type icons
+// Activity type icons and names
 const ACTIVITY_ICONS: Record<string, string> = {
     EXPLAIN: '🗣️',
     PANTOMIME: '🎭',
@@ -19,10 +19,29 @@ const ACTIVITY_NAMES = {
     tr: { EXPLAIN: 'Açıkla', PANTOMIME: 'Pantomim', DRAW: 'Çiz', HUM: 'Mırılda' }
 };
 
+const ACTIVITY_RULES = {
+    de: {
+        EXPLAIN: '🗣️ Erkläre den Begriff, ohne die verbotenen Wörter zu benutzen!',
+        PANTOMIME: '🎭 Stelle den Begriff nur mit Gesten dar – KEIN Sprechen!',
+        DRAW: '🎨 Zeichne den Begriff – keine Buchstaben oder Zahlen!',
+        HUM: '🎵 Summe die Melodie – kein Text, kein Singen!'
+    },
+    tr: {
+        EXPLAIN: '🗣️ Yasak kelimeleri kullanmadan terimi açıkla!',
+        PANTOMIME: '🎭 Sadece hareketlerle anlat – KONUŞMA YOK!',
+        DRAW: '🎨 Terimi çiz – harf veya rakam yok!',
+        HUM: '🎵 Melodiyi mırılda – şarkı sözü yok!'
+    }
+};
+
+// Cell status types
+type CellStatus = 'empty' | 'active' | 'won' | 'locked';
+
 interface BingoCell {
     category: string;
+    categoryIcon: string;
     type: 'EXPLAIN' | 'PANTOMIME' | 'DRAW' | 'HUM';
-    status: 'empty' | 'active' | 'won' | 'locked';
+    status: CellStatus;
     wonByTeamId?: string;
 }
 
@@ -33,58 +52,91 @@ interface TabooCard {
     category: string;
 }
 
-const BingoGame: React.FC<BingoGameProps> = ({ isAdmin }) => {
-    const {
-        session,
-        socket,
-        currentTeamId,
-        setPhase
-    } = useGameStore();
+// Turn phases
+type TurnPhase = 'WAITING' | 'SELECTING' | 'PERFORMING' | 'RESULT';
 
+// Category data
+const CATEGORIES = [
+    { id: 'tuerkei', name: { de: 'Türkei Spezial', tr: 'Türkiye Özel' }, icon: '🇹🇷' },
+    { id: 'musik_hits', name: { de: 'Musik 2025', tr: 'Müzik 2025' }, icon: '🎵' },
+    { id: 'filme_serien', name: { de: 'Filme & Serien', tr: 'Filmler & Diziler' }, icon: '🎬' },
+    { id: 'sport', name: { de: 'Sport 2025', tr: 'Spor 2025' }, icon: '⚽' },
+    { id: 'prominente', name: { de: 'Prominente', tr: 'Ünlüler' }, icon: '⭐' },
+    { id: 'tech_gaming', name: { de: 'Tech & Gaming', tr: 'Teknoloji & Oyunlar' }, icon: '🎮' },
+    { id: 'popkultur', name: { de: 'Popkultur', tr: 'Popüler Kültür' }, icon: '📱' },
+    { id: 'essen_trinken', name: { de: 'Essen & Trinken', tr: 'Yemek & İçecek' }, icon: '🍕' },
+    { id: 'silvester', name: { de: 'Silvester', tr: 'Yılbaşı' }, icon: '🎆' },
+];
+
+const BingoGame: React.FC<BingoGameProps> = ({ isAdmin }) => {
+    const { session, socket, currentTeamId, setPhase } = useGameStore();
+
+    // Game state
     const [grid, setGrid] = useState<BingoCell[]>([]);
+    const [turnPhase, setTurnPhase] = useState<TurnPhase>('WAITING');
+    const [currentTurnTeamIndex, setCurrentTurnTeamIndex] = useState(0);
     const [activeCell, setActiveCell] = useState<number | null>(null);
-    const [activeTeamId, setActiveTeamId] = useState<string | null>(null);
     const [tabooCard, setTabooCard] = useState<TabooCard | null>(null);
     const [timer, setTimer] = useState(60);
-    const [isLoading, setIsLoading] = useState(true);
+    const [timerActive, setTimerActive] = useState(false);
     const [buzzedBy, setBuzzedBy] = useState<string | null>(null);
     const [showWinner, setShowWinner] = useState<Team | null>(null);
+    const [isLoading, setIsLoading] = useState(true);
 
-    const language = session?.language || 'de';
+    const language = (session?.language || 'de') as 'de' | 'tr';
     const teams = session?.teams || [];
+    const activeTeam = teams[currentTurnTeamIndex];
+    const isMyTurn = activeTeam?.id === currentTeamId;
+    const isPerformer = isMyTurn && turnPhase === 'PERFORMING';
+    const isJury = !isMyTurn && turnPhase === 'PERFORMING';
 
+    // Translations
     const t = {
         de: {
-            loading: 'Bingo wird geladen...',
             title: 'CHAOS BINGO',
             subtitle: 'Mission: Gridlock',
-            yourTurn: 'Du bist dran!',
-            waiting: 'warten...',
-            selectCell: 'Wähle ein Feld!',
-            term: 'Begriff:',
-            forbidden: 'Verbotene Wörter:',
-            buzzer: 'BUZZER!',
+            loading: 'Spiel wird geladen...',
+            yourTurn: '🎯 Du bist dran! Wähle ein Feld!',
+            waitingFor: 'Warte auf',
+            toSelect: 'wählt ein Feld...',
+            performing: 'führt durch...',
+            attention: '⚠️ ACHTUNG: KONTROLLE!',
+            watchFor: 'Achte auf Regelverstöße!',
+            buzzer: '🚨 BUZZER',
             buzzed: 'GEBUZZERT!',
-            success: 'RICHTIG!',
-            fail: 'FALSCH!',
-            winner: 'GEWINNER!',
-            seconds: 'Sekunden'
+            fieldLocked: 'Feld gesperrt!',
+            correct: '✓ RICHTIG!',
+            wrong: '✕ FALSCH!',
+            timeUp: 'Zeit abgelaufen!',
+            term: 'BEGRIFF:',
+            forbidden: 'VERBOTENE WÖRTER:',
+            winner: '🎉 BINGO!',
+            seconds: 'Sekunden',
+            startRound: 'Runde starten',
+            nextTeam: 'Nächstes Team'
         },
         tr: {
-            loading: 'Bingo yükleniyor...',
             title: 'KAOS BİNGO',
             subtitle: 'Görev: Gridlock',
-            yourTurn: 'Senin sıran!',
-            waiting: 'bekliyor...',
-            selectCell: 'Bir hücre seç!',
-            term: 'Terim:',
-            forbidden: 'Yasak kelimeler:',
-            buzzer: 'BUZZER!',
+            loading: 'Oyun yükleniyor...',
+            yourTurn: '🎯 Senin sıran! Bir hücre seç!',
+            waitingFor: 'Bekleniyor',
+            toSelect: 'hücre seçiyor...',
+            performing: 'gösteriyor...',
+            attention: '⚠️ DİKKAT: KONTROL!',
+            watchFor: 'Kural ihlallerini izle!',
+            buzzer: '🚨 BUZZER',
             buzzed: 'BUZZER BASILDI!',
-            success: 'DOĞRU!',
-            fail: 'YANLIŞ!',
-            winner: 'KAZANAN!',
-            seconds: 'saniye'
+            fieldLocked: 'Hücre kilitlendi!',
+            correct: '✓ DOĞRU!',
+            wrong: '✕ YANLIŞ!',
+            timeUp: 'Süre doldu!',
+            term: 'TERİM:',
+            forbidden: 'YASAK KELİMELER:',
+            winner: '🎉 BİNGO!',
+            seconds: 'saniye',
+            startRound: 'Turu başlat',
+            nextTeam: 'Sonraki takım'
         }
     }[language];
 
@@ -92,166 +144,256 @@ const BingoGame: React.FC<BingoGameProps> = ({ isAdmin }) => {
     useEffect(() => {
         initializeGrid();
         setupSocketListeners();
-
-        return () => {
-            if (socket) {
-                socket.off('bingo-cell-selected');
-                socket.off('bingo-buzzed');
-                socket.off('bingo-cell-won');
-                socket.off('bingo-cell-locked');
-                socket.off('bingo-winner');
-            }
-        };
+        return () => cleanupSocketListeners();
     }, []);
 
     // Timer countdown
     useEffect(() => {
-        if (activeCell !== null && timer > 0) {
-            const interval = setInterval(() => setTimer(t => t - 1), 1000);
-            return () => clearInterval(interval);
+        if (!timerActive || timer <= 0) return;
+        const interval = setInterval(() => setTimer(t => t - 1), 1000);
+        return () => clearInterval(interval);
+    }, [timerActive, timer]);
+
+    // Handle timeout
+    useEffect(() => {
+        if (timer === 0 && timerActive) {
+            handleTimeout();
         }
-        if (timer === 0 && activeCell !== null && isAdmin) {
-            handleFail();
-        }
-    }, [activeCell, timer]);
+    }, [timer, timerActive]);
 
-    const initializeGrid = async () => {
-        setIsLoading(true);
-
-        // Categories for Bingo
-        const categories = [
-            'Filme & Serien', 'Musik & Hits', 'Sport',
-            'Weltgeschehen', 'Türkei Spezial', 'Tech & Gaming',
-            'Popkultur', 'Prominente', 'Silvester'
-        ];
-
+    const initializeGrid = () => {
         const types: Array<'EXPLAIN' | 'PANTOMIME' | 'DRAW' | 'HUM'> = ['EXPLAIN', 'PANTOMIME', 'DRAW', 'HUM'];
+        const shuffledCategories = [...CATEGORIES].sort(() => Math.random() - 0.5).slice(0, 9);
 
-        const newGrid: BingoCell[] = categories.map(cat => ({
-            category: cat,
+        const newGrid: BingoCell[] = shuffledCategories.map(cat => ({
+            category: cat.id,
+            categoryIcon: cat.icon,
             type: types[Math.floor(Math.random() * types.length)],
             status: 'empty'
         }));
 
         setGrid(newGrid);
         setIsLoading(false);
+        setTurnPhase('SELECTING');
     };
 
     const setupSocketListeners = () => {
         if (!socket) return;
 
+        // Cell selected by active team
         socket.on('bingo-cell-selected', (data: { cellIndex: number; teamId: string; card: TabooCard }) => {
             setActiveCell(data.cellIndex);
-            setActiveTeamId(data.teamId);
             setTabooCard(data.card);
+            setGrid(prev => prev.map((cell, i) =>
+                i === data.cellIndex ? { ...cell, status: 'active' } : cell
+            ));
+        });
+
+        // Round started by host
+        socket.on('bingo-round-started', () => {
+            setTurnPhase('PERFORMING');
             setTimer(60);
+            setTimerActive(true);
             setBuzzedBy(null);
-
-            const newGrid = [...grid];
-            newGrid[data.cellIndex] = { ...newGrid[data.cellIndex], status: 'active' };
-            setGrid(newGrid);
         });
 
-        socket.on('bingo-buzzed', (data: { teamId: string }) => {
+        // Buzzer pressed
+        socket.on('bingo-buzzed', (data: { teamId: string; teamName: string }) => {
             setBuzzedBy(data.teamId);
-            // Vibrate on all devices
-            if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+            setTimerActive(false);
+            // Lock the cell
+            if (activeCell !== null) {
+                setGrid(prev => prev.map((cell, i) =>
+                    i === activeCell ? { ...cell, status: 'locked' } : cell
+                ));
+            }
+            // Play buzzer sound
+            playBuzzerSound();
+            // After 2 seconds, move to next turn
+            setTimeout(() => advanceToNextTurn(), 2500);
         });
 
-        socket.on('bingo-cell-won', (data: { cellIndex: number; teamId: string }) => {
-            const newGrid = [...grid];
-            newGrid[data.cellIndex] = {
-                ...newGrid[data.cellIndex],
-                status: 'won',
-                wonByTeamId: data.teamId
-            };
-            setGrid(newGrid);
-            resetRound();
+        // Correct answer
+        socket.on('bingo-correct', (data: { cellIndex: number; teamId: string }) => {
+            setTimerActive(false);
+            setGrid(prev => prev.map((cell, i) =>
+                i === data.cellIndex ? { ...cell, status: 'won', wonByTeamId: data.teamId } : cell
+            ));
+            setTimeout(() => {
+                checkForWinner(data.teamId);
+                if (!showWinner) advanceToNextTurn();
+            }, 1500);
         });
 
-        socket.on('bingo-cell-locked', (data: { cellIndex: number }) => {
-            const newGrid = [...grid];
-            newGrid[data.cellIndex] = { ...newGrid[data.cellIndex], status: 'locked' };
-            setGrid(newGrid);
-            resetRound();
+        // Time ran out
+        socket.on('bingo-timeout', () => {
+            setTimerActive(false);
+            if (activeCell !== null) {
+                setGrid(prev => prev.map((cell, i) =>
+                    i === activeCell ? { ...cell, status: 'empty' } : cell
+                ));
+            }
+            setTimeout(() => advanceToNextTurn(), 1500);
         });
 
+        // Winner declared
         socket.on('bingo-winner', (data: { teamId: string }) => {
             const winner = teams.find(t => t.id === data.teamId);
             if (winner) setShowWinner(winner);
         });
     };
 
-    const handleCellClick = async (cellIndex: number) => {
-        if (!isAdmin || grid[cellIndex].status !== 'empty' || activeCell !== null) return;
+    const cleanupSocketListeners = () => {
+        if (!socket) return;
+        socket.off('bingo-cell-selected');
+        socket.off('bingo-round-started');
+        socket.off('bingo-buzzed');
+        socket.off('bingo-correct');
+        socket.off('bingo-timeout');
+        socket.off('bingo-winner');
+    };
+
+    const playBuzzerSound = () => {
+        // TODO: Play "MÖÖÖP" sound
+        if (navigator.vibrate) navigator.vibrate([300, 100, 300, 100, 300]);
+    };
+
+    const handleCellSelect = async (cellIndex: number) => {
+        if (!isMyTurn || turnPhase !== 'SELECTING') return;
+        if (grid[cellIndex].status !== 'empty') return;
         if (!session || !socket) return;
 
-        // Determine which team's turn (rotate through teams)
-        const teamIndex = grid.filter(c => c.status !== 'empty').length % teams.length;
-        const activeTeam = teams[teamIndex];
-        if (!activeTeam) return;
-
-        // Generate a random taboo card for this cell
+        // Fetch random card from DB for this category
+        const cell = grid[cellIndex];
         const card: TabooCard = {
-            term: `Begriff ${cellIndex + 1}`, // Placeholder - would come from API
+            term: `Begriff für ${cell.category}`, // Will be replaced by API
             forbiddenWords: ['Wort1', 'Wort2', 'Wort3', 'Wort4', 'Wort5'],
-            type: grid[cellIndex].type,
-            category: grid[cellIndex].category
+            type: cell.type,
+            category: cell.category
         };
 
+        // Emit cell selection
         socket.emit('bingo-select-cell', {
             sessionId: session.id,
             cellIndex,
-            teamId: activeTeam.id,
+            teamId: currentTeamId,
             card
         });
+
+        setActiveCell(cellIndex);
+        setTabooCard(card);
+        setGrid(prev => prev.map((c, i) =>
+            i === cellIndex ? { ...c, status: 'active' } : c
+        ));
+    };
+
+    const handleStartRound = () => {
+        if (!isAdmin || !session || !socket) return;
+        socket.emit('bingo-start-round', { sessionId: session.id });
+        setTurnPhase('PERFORMING');
+        setTimer(60);
+        setTimerActive(true);
     };
 
     const handleBuzz = () => {
-        if (!session || !socket || !currentTeamId) return;
-        if (activeTeamId === currentTeamId) return; // Can't buzz yourself
-
+        if (!socket || !session || !currentTeamId || isMyTurn) return;
+        const myTeam = teams.find(t => t.id === currentTeamId);
         socket.emit('bingo-buzz', {
             sessionId: session.id,
-            teamId: currentTeamId
+            teamId: currentTeamId,
+            teamName: myTeam?.secretName || myTeam?.realName
         });
     };
 
-    const handleSuccess = () => {
-        if (!session || !socket || activeCell === null) return;
-
-        socket.emit('bingo-success', {
+    const handleCorrect = () => {
+        if (!isAdmin || !socket || !session || activeCell === null) return;
+        socket.emit('bingo-correct', {
             sessionId: session.id,
             cellIndex: activeCell,
-            teamId: activeTeamId
+            teamId: activeTeam?.id
         });
     };
 
-    const handleFail = () => {
-        if (!session || !socket || activeCell === null) return;
-
+    const handleWrong = () => {
+        if (!isAdmin || !socket || !session || activeCell === null) return;
+        // Lock the cell on wrong answer
         socket.emit('bingo-fail', {
             sessionId: session.id,
             cellIndex: activeCell
         });
+        setGrid(prev => prev.map((cell, i) =>
+            i === activeCell ? { ...cell, status: 'locked' } : cell
+        ));
+        setTimerActive(false);
+        setTimeout(() => advanceToNextTurn(), 1500);
     };
 
-    const resetRound = () => {
+    const handleTimeout = () => {
+        if (!socket || !session) return;
+        socket.emit('bingo-timeout', { sessionId: session.id });
+        if (activeCell !== null) {
+            setGrid(prev => prev.map((cell, i) =>
+                i === activeCell ? { ...cell, status: 'empty' } : cell
+            ));
+        }
+        setTimerActive(false);
+        setTimeout(() => advanceToNextTurn(), 1500);
+    };
+
+    const advanceToNextTurn = () => {
         setActiveCell(null);
-        setActiveTeamId(null);
         setTabooCard(null);
-        setTimer(60);
         setBuzzedBy(null);
+        setTurnPhase('SELECTING');
+        setCurrentTurnTeamIndex(prev => (prev + 1) % teams.length);
     };
 
-    const getTeamAvatar = (teamId: string) => {
-        const team = teams.find(t => t.id === teamId);
-        return team?.avatar || team?.secretName?.[0] || '?';
+    const checkForWinner = (teamId: string) => {
+        // Check all 8 winning lines
+        const lines = [
+            [0, 1, 2], [3, 4, 5], [6, 7, 8], // Rows
+            [0, 3, 6], [1, 4, 7], [2, 5, 8], // Columns
+            [0, 4, 8], [2, 4, 6] // Diagonals
+        ];
+
+        for (const line of lines) {
+            const cells = line.map(i => grid[i]);
+            if (cells.every(c => c.status === 'won' && c.wonByTeamId === teamId)) {
+                const winner = teams.find(t => t.id === teamId);
+                if (winner) {
+                    setShowWinner(winner);
+                    if (socket && session) {
+                        socket.emit('bingo-winner', { sessionId: session.id, teamId });
+                    }
+                }
+                return;
+            }
+        }
+
+        // Check if grid is full
+        const filledCells = grid.filter(c => c.status === 'won' || c.status === 'locked').length;
+        if (filledCells === 9) {
+            // Find team with most cells
+            const teamCounts = teams.map(team => ({
+                team,
+                count: grid.filter(c => c.status === 'won' && c.wonByTeamId === team.id).length
+            }));
+            const maxCount = Math.max(...teamCounts.map(tc => tc.count));
+            const winner = teamCounts.find(tc => tc.count === maxCount)?.team;
+            if (winner) setShowWinner(winner);
+        }
     };
 
-    const isMyTurn = activeTeamId === currentTeamId;
-    const canBuzz = activeCell !== null && !isMyTurn && !buzzedBy;
+    const getCategoryName = (categoryId: string): string => {
+        const cat = CATEGORIES.find(c => c.id === categoryId);
+        return cat ? cat.name[language] : categoryId;
+    };
 
+    const getTeamById = (teamId: string): Team | undefined => {
+        return teams.find(t => t.id === teamId);
+    };
+
+    // Loading state
     if (isLoading) {
         return (
             <div className="flex flex-col items-center justify-center min-h-[60vh]">
@@ -266,10 +408,9 @@ const BingoGame: React.FC<BingoGameProps> = ({ isAdmin }) => {
         return (
             <div className="flex flex-col items-center justify-center min-h-[80vh] text-center relative">
                 <Confetti particleCount={150} duration={8000} />
-
                 <div className="text-8xl mb-6 animate-bounce">🎉</div>
                 <h1 className="text-5xl font-titan text-yellow-400 neon-glow mb-2">{t.winner}</h1>
-                <p className="text-2xl text-white/60 mb-6">BINGO!</p>
+                <p className="text-2xl text-white/60 mb-6">3 in einer Reihe!</p>
 
                 <div className="glass p-8 rounded-3xl min-w-[300px]">
                     {showWinner.avatar ? (
@@ -279,9 +420,10 @@ const BingoGame: React.FC<BingoGameProps> = ({ isAdmin }) => {
                             {showWinner.secretName?.[0]}
                         </div>
                     )}
-                    <p className="text-2xl font-bold text-white">{showWinner.secretName}</p>
-                    <p className="text-lg text-pink-400 mt-2">({showWinner.realName})</p>
+                    <p className="text-2xl font-bold text-cyan-400">{showWinner.secretName}</p>
+                    <p className="text-xl text-white mt-2">= {showWinner.realName}</p>
                 </div>
+
                 {isAdmin && (
                     <button
                         onClick={() => setPhase('LEADERBOARD')}
@@ -297,17 +439,18 @@ const BingoGame: React.FC<BingoGameProps> = ({ isAdmin }) => {
     return (
         <div className="max-w-5xl mx-auto px-4 py-6">
             {/* Header */}
-            <div className="text-center mb-6">
-                <h2 className="text-4xl font-titan text-orange-500 neon-glow mb-2">{t.title}</h2>
-                <div className="glass inline-block px-6 py-2 rounded-full text-cyan-400 font-bold">
+            <div className="text-center mb-4">
+                <h2 className="text-4xl font-titan text-orange-500 neon-glow mb-1">{t.title}</h2>
+                <div className="glass inline-block px-4 py-1 rounded-full text-cyan-400 font-bold text-sm">
                     {t.subtitle}
                 </div>
             </div>
 
-            {/* Team List Bar - Show all players with real names visible */}
-            <div className="glass rounded-2xl px-4 py-3 mb-6 flex flex-wrap gap-3 justify-center">
+            {/* Team List Bar */}
+            <div className="glass rounded-2xl px-4 py-3 mb-4 flex flex-wrap gap-3 justify-center">
                 {teams.map((team, idx) => {
-                    const isActive = team.id === activeTeamId;
+                    const isActive = idx === currentTurnTeamIndex;
+                    const cellsWon = grid.filter(c => c.status === 'won' && c.wonByTeamId === team.id).length;
                     return (
                         <div
                             key={team.id}
@@ -325,16 +468,15 @@ const BingoGame: React.FC<BingoGameProps> = ({ isAdmin }) => {
                                 <p className="text-sm font-bold text-white">{team.realName}</p>
                                 <p className="text-xs text-cyan-400">{team.secretName}</p>
                             </div>
-                            {isActive && (
-                                <span className="text-orange-400 animate-pulse">◀</span>
-                            )}
+                            <span className="text-yellow-400 font-bold">{cellsWon}</span>
+                            {isActive && <span className="text-orange-400 animate-pulse">◀</span>}
                         </div>
                     );
                 })}
             </div>
 
-            {/* Timer */}
-            {activeCell !== null && (
+            {/* Timer (only during PERFORMING) */}
+            {turnPhase === 'PERFORMING' && (
                 <div className="text-center mb-4">
                     <div className={`text-5xl font-titan ${timer <= 10 ? 'text-red-500 animate-pulse' : 'text-yellow-400'}`}>
                         {timer} {t.seconds}
@@ -342,41 +484,67 @@ const BingoGame: React.FC<BingoGameProps> = ({ isAdmin }) => {
                 </div>
             )}
 
+            {/* Turn Status */}
+            {turnPhase === 'SELECTING' && (
+                <div className="text-center mb-4 glass rounded-2xl py-3 px-6">
+                    {isMyTurn ? (
+                        <p className="text-xl text-orange-400 font-bold">{t.yourTurn}</p>
+                    ) : (
+                        <p className="text-xl text-white/60">
+                            {t.waitingFor} <span className="text-cyan-400 font-bold">{activeTeam?.secretName}</span> {t.toSelect}
+                        </p>
+                    )}
+                </div>
+            )}
+
             {/* 3x3 Grid */}
-            <div className="grid grid-cols-3 gap-3 mb-8">
+            <div className="grid grid-cols-3 gap-3 mb-6">
                 {grid.map((cell, i) => {
                     let cellClass = 'glass border-2 border-white/10';
+                    let isSelectable = false;
 
-                    if (cell.status === 'won') {
+                    if (cell.status === 'won' && cell.wonByTeamId) {
+                        const winTeam = getTeamById(cell.wonByTeamId);
                         cellClass = 'bg-green-500/30 border-2 border-green-500';
                     } else if (cell.status === 'locked') {
-                        cellClass = 'bg-red-500/20 border-2 border-red-500/50 opacity-50';
+                        cellClass = 'bg-gray-800/80 border-2 border-gray-600 opacity-60';
                     } else if (cell.status === 'active') {
-                        cellClass = 'bg-orange-500/30 border-2 border-orange-500 ring-4 ring-orange-500/50';
-                    } else if (isAdmin) {
-                        cellClass += ' hover:border-orange-500 cursor-pointer';
+                        cellClass = 'bg-orange-500/30 border-2 border-orange-500 ring-4 ring-orange-500/50 animate-pulse';
+                    } else if (isMyTurn && turnPhase === 'SELECTING') {
+                        cellClass += ' hover:border-orange-500 hover:bg-orange-500/10 cursor-pointer';
+                        isSelectable = true;
                     }
 
                     return (
                         <button
                             key={i}
-                            onClick={() => handleCellClick(i)}
-                            disabled={!isAdmin || cell.status !== 'empty' || activeCell !== null}
+                            onClick={() => isSelectable && handleCellSelect(i)}
+                            disabled={!isSelectable}
                             className={`aspect-square rounded-2xl flex flex-col items-center justify-center p-3 text-center transition-all ${cellClass}`}
                         >
                             {cell.status === 'won' && cell.wonByTeamId ? (
-                                <div className="w-16 h-16 rounded-full bg-gradient-to-br from-green-400 to-green-600 flex items-center justify-center text-2xl">
-                                    {getTeamAvatar(cell.wonByTeamId)}
+                                <div className="flex flex-col items-center">
+                                    {getTeamById(cell.wonByTeamId)?.avatar ? (
+                                        <img src={getTeamById(cell.wonByTeamId)?.avatar} alt="" className="w-12 h-12 rounded-full border-2 border-green-400" />
+                                    ) : (
+                                        <div className="w-12 h-12 rounded-full bg-green-500 flex items-center justify-center text-xl font-bold">
+                                            {getTeamById(cell.wonByTeamId)?.secretName?.[0]}
+                                        </div>
+                                    )}
+                                    <span className="text-xs text-green-400 mt-1 truncate max-w-full">
+                                        {getTeamById(cell.wonByTeamId)?.realName}
+                                    </span>
                                 </div>
                             ) : cell.status === 'locked' ? (
-                                <span className="text-4xl">🔒</span>
+                                <span className="text-4xl opacity-50">🔒</span>
                             ) : (
                                 <>
-                                    <span className="text-3xl mb-2">{ACTIVITY_ICONS[cell.type]}</span>
-                                    <span className="text-xs md:text-sm font-bold leading-tight text-white/80">
-                                        {cell.category}
+                                    <span className="text-3xl mb-1">{cell.categoryIcon}</span>
+                                    <span className="text-3xl mb-1">{ACTIVITY_ICONS[cell.type]}</span>
+                                    <span className="text-xs font-bold leading-tight text-white/80">
+                                        {getCategoryName(cell.category)}
                                     </span>
-                                    <span className="text-xs text-white/40 mt-1">
+                                    <span className="text-xs text-white/40">
                                         {ACTIVITY_NAMES[language][cell.type]}
                                     </span>
                                 </>
@@ -386,45 +554,75 @@ const BingoGame: React.FC<BingoGameProps> = ({ isAdmin }) => {
                 })}
             </div>
 
-            {/* Active Round - Taboo Card */}
-            {tabooCard && (
+            {/* Active Card & Controls */}
+            {tabooCard && turnPhase !== 'SELECTING' && (
                 <div className="flex flex-col lg:flex-row gap-6">
-                    {/* Taboo Card - visible to everyone (Jury sees forbidden words!) */}
+                    {/* Card Display */}
                     <div className="flex-1 glass p-6 rounded-3xl border-2 border-pink-500/30">
                         <div className="flex items-center gap-3 mb-4">
                             <span className="text-4xl">{ACTIVITY_ICONS[tabooCard.type]}</span>
                             <div>
-                                <h3 className="text-pink-500 font-titan text-xl">{tabooCard.category}</h3>
+                                <h3 className="text-pink-500 font-titan text-xl">{getCategoryName(tabooCard.category)}</h3>
                                 <p className="text-white/40 text-sm">{ACTIVITY_NAMES[language][tabooCard.type as keyof typeof ACTIVITY_NAMES['de']]}</p>
                             </div>
                         </div>
 
-                        <div className="bg-white/5 rounded-2xl p-4 mb-4">
-                            <span className="text-xs uppercase text-white/40 mb-1 block">{t.term}</span>
-                            <div className="text-3xl font-bold text-white">{tabooCard.term}</div>
+                        {/* Rule reminder */}
+                        <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-3 mb-4 text-sm text-yellow-400">
+                            {ACTIVITY_RULES[language][tabooCard.type as keyof typeof ACTIVITY_RULES['de']]}
                         </div>
 
-                        {tabooCard.type === 'EXPLAIN' && (
-                            <div>
-                                <span className="text-xs uppercase text-red-500 font-bold block mb-2">{t.forbidden}</span>
-                                <div className="flex flex-wrap gap-2">
-                                    {tabooCard.forbiddenWords.map((w, i) => (
-                                        <span
-                                            key={i}
-                                            className="px-3 py-1 bg-red-500/20 text-red-400 rounded-full text-sm font-bold line-through"
-                                        >
-                                            {w}
-                                        </span>
-                                    ))}
-                                </div>
+                        {/* Performer View: Show term, hide forbidden words */}
+                        {isPerformer && (
+                            <div className="bg-white/5 rounded-2xl p-4">
+                                <span className="text-xs uppercase text-white/40 mb-1 block">{t.term}</span>
+                                <div className="text-3xl font-bold text-white">{tabooCard.term}</div>
                             </div>
+                        )}
+
+                        {/* Jury View: Show term AND forbidden words */}
+                        {(isJury || isAdmin) && (
+                            <>
+                                <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-3 mb-4">
+                                    <span className="text-red-400 font-bold">{t.attention}</span>
+                                    <p className="text-white/60 text-sm">{t.watchFor}</p>
+                                </div>
+
+                                <div className="bg-white/5 rounded-2xl p-4 mb-4">
+                                    <span className="text-xs uppercase text-white/40 mb-1 block">{t.term}</span>
+                                    <div className="text-3xl font-bold text-white">{tabooCard.term}</div>
+                                </div>
+
+                                {tabooCard.type === 'EXPLAIN' && (
+                                    <div>
+                                        <span className="text-xs uppercase text-red-500 font-bold block mb-2">{t.forbidden}</span>
+                                        <div className="flex flex-wrap gap-2">
+                                            {tabooCard.forbiddenWords.map((w, i) => (
+                                                <span key={i} className="px-3 py-1 bg-red-500/20 text-red-400 rounded-full text-sm font-bold">
+                                                    {w}
+                                                </span>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+                            </>
                         )}
                     </div>
 
-                    {/* Buzzer / Controls */}
+                    {/* Controls */}
                     <div className="flex-1 flex flex-col items-center justify-center gap-4">
-                        {/* Buzzer for non-active players */}
-                        {canBuzz && (
+                        {/* Host: Start Round button */}
+                        {isAdmin && turnPhase !== 'PERFORMING' && activeCell !== null && (
+                            <button
+                                onClick={handleStartRound}
+                                className="px-8 py-4 bg-green-500 hover:bg-green-400 text-white font-titan text-xl rounded-full shadow-lg"
+                            >
+                                ▶ {t.startRound}
+                            </button>
+                        )}
+
+                        {/* Jury: Buzzer */}
+                        {isJury && turnPhase === 'PERFORMING' && !buzzedBy && (
                             <button
                                 onClick={handleBuzz}
                                 className="buzzer-button w-40 h-40 md:w-56 md:h-56 bg-red-600 rounded-full shadow-[0_0_50px_rgba(220,38,38,0.5)] flex items-center justify-center border-8 border-red-900 active:scale-95 transition-transform"
@@ -439,37 +637,31 @@ const BingoGame: React.FC<BingoGameProps> = ({ isAdmin }) => {
                                 <div className="text-4xl text-red-500 font-titan animate-pulse mb-2">
                                     🚨 {t.buzzed} 🚨
                                 </div>
+                                <p className="text-xl text-white">{t.fieldLocked}</p>
                                 <p className="text-white/60">
-                                    {teams.find(t => t.id === buzzedBy)?.secretName}
+                                    {getTeamById(buzzedBy)?.secretName}
                                 </p>
                             </div>
                         )}
 
-                        {/* Admin controls */}
-                        {isAdmin && activeCell !== null && (
+                        {/* Host: Correct/Wrong buttons */}
+                        {isAdmin && turnPhase === 'PERFORMING' && !buzzedBy && (
                             <div className="flex gap-4 mt-4">
                                 <button
-                                    onClick={handleSuccess}
+                                    onClick={handleCorrect}
                                     className="px-8 py-4 bg-green-500 hover:bg-green-400 text-white font-titan text-xl rounded-full"
                                 >
-                                    ✓ {t.success}
+                                    {t.correct}
                                 </button>
                                 <button
-                                    onClick={handleFail}
+                                    onClick={handleWrong}
                                     className="px-8 py-4 bg-red-500 hover:bg-red-400 text-white font-titan text-xl rounded-full"
                                 >
-                                    ✕ {t.fail}
+                                    {t.wrong}
                                 </button>
                             </div>
                         )}
                     </div>
-                </div>
-            )}
-
-            {/* No cell selected hint for admin */}
-            {!tabooCard && isAdmin && (
-                <div className="text-center text-white/40 text-lg">
-                    ☝️ {t.selectCell}
                 </div>
             )}
         </div>

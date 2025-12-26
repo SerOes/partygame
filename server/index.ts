@@ -1304,7 +1304,7 @@ io.on('connection', (socket) => {
 
   // ========== BINGO GAME EVENTS ==========
 
-  // Host selects a cell for a team
+  // Team selects a cell
   socket.on('bingo-select-cell', (data: {
     sessionId: string;
     cellIndex: number;
@@ -1319,14 +1319,23 @@ io.on('connection', (socket) => {
     });
   });
 
-  // Player presses buzzer
-  socket.on('bingo-buzz', (data: { sessionId: string; teamId: string }) => {
-    console.log(`🚨 BUZZER! Team ${data.teamId} buzzed!`);
-    io.to(data.sessionId).emit('bingo-buzzed', { teamId: data.teamId });
+  // Host starts the round (60s timer begins)
+  socket.on('bingo-start-round', (data: { sessionId: string }) => {
+    console.log(`▶️ Bingo round started in session ${data.sessionId}`);
+    io.to(data.sessionId).emit('bingo-round-started');
   });
 
-  // Host marks cell as success (team guessed correctly)
-  socket.on('bingo-success', async (data: { sessionId: string; cellIndex: number; teamId: string }) => {
+  // Player presses buzzer (cell gets LOCKED)
+  socket.on('bingo-buzz', (data: { sessionId: string; teamId: string; teamName?: string }) => {
+    console.log(`🚨 BUZZER! ${data.teamName || data.teamId} buzzed!`);
+    io.to(data.sessionId).emit('bingo-buzzed', {
+      teamId: data.teamId,
+      teamName: data.teamName || 'Unknown'
+    });
+  });
+
+  // Host marks cell as correct (team wins the cell)
+  socket.on('bingo-correct', async (data: { sessionId: string; cellIndex: number; teamId: string }) => {
     console.log(`✅ Bingo cell ${data.cellIndex} won by team ${data.teamId}`);
 
     // Update team score
@@ -1335,26 +1344,29 @@ io.on('connection', (socket) => {
       data: { score: { increment: 100 } }
     });
 
-    io.to(data.sessionId).emit('bingo-cell-won', {
+    io.to(data.sessionId).emit('bingo-correct', {
       cellIndex: data.cellIndex,
       teamId: data.teamId
     });
-
-    // Check for bingo (3 in a row) - this would need grid state from client
-    // For now, emit to let client check win condition
   });
 
-  // Host marks cell as fail (buzzer or timeout)
+  // Host marks cell as fail (wrong answer or buzzer) -> cell gets LOCKED
   socket.on('bingo-fail', (data: { sessionId: string; cellIndex: number }) => {
     console.log(`❌ Bingo cell ${data.cellIndex} locked`);
     io.to(data.sessionId).emit('bingo-cell-locked', { cellIndex: data.cellIndex });
   });
 
-  // Bingo winner detected
+  // Time ran out -> cell stays empty for next attempt
+  socket.on('bingo-timeout', (data: { sessionId: string }) => {
+    console.log(`⏰ Bingo round timed out in session ${data.sessionId}`);
+    io.to(data.sessionId).emit('bingo-timeout');
+  });
+
+  // Bingo winner detected (3 in a row!)
   socket.on('bingo-winner', async (data: { sessionId: string; teamId: string }) => {
     console.log(`🏆 BINGO! Team ${data.teamId} wins!`);
 
-    // Award bonus points
+    // Award bonus points for winning
     await prisma.team.update({
       where: { id: data.teamId },
       data: { score: { increment: 500 } }
