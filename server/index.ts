@@ -235,8 +235,9 @@ app.get('/api/sessions/:joinCode', async (req, res) => {
 app.post('/api/sessions/:id/select-categories', async (req, res) => {
   try {
     const { categoryIds } = req.body;
-    if (!Array.isArray(categoryIds) || categoryIds.length !== 5) {
-      return res.status(400).json({ error: 'Must select exactly 5 categories' });
+    // Allow 1 or more categories (flexible selection)
+    if (!Array.isArray(categoryIds) || categoryIds.length < 1) {
+      return res.status(400).json({ error: 'Must select at least 1 category' });
     }
 
     const session = await prisma.gameSession.update({
