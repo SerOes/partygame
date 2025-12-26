@@ -347,11 +347,37 @@ app.post('/api/sessions/:joinCode/join', async (req, res) => {
         'Neşet Ertaş': { gender: 'male', profession: 'folk musician', funTrait: 'playing traditional instrument with hat' },
         'Zeki Müren': { gender: 'male', profession: 'flamboyant singer', funTrait: 'colorful costume with big jewelry' },
         'Bülent Ersoy': { gender: 'female', profession: 'dramatic diva singer', funTrait: 'extravagant gown and big hair' },
-        'Ibrahim Tatlıses': { gender: 'male', profession: 'arabesk singer', funTrait: 'mustache and emotional expression' },
+        'İbrahim Tatlıses': { gender: 'male', profession: 'arabesk singer', funTrait: 'mustache and emotional expression' },
         'Hülya Avşar': { gender: 'female', profession: 'TV personality', funTrait: 'confident pose with blonde hair' },
         'Adile Naşit': { gender: 'female', profession: 'comedy actress', funTrait: 'motherly expression with apron' },
         'Münir Özkul': { gender: 'male', profession: 'theater actor', funTrait: 'wise old man with glasses' },
         'Orhan Gencebay': { gender: 'male', profession: 'arabesk musician', funTrait: 'playing saz with emotional face' },
+        // Male singers & actors
+        'Müslüm Gürses': { gender: 'male', profession: 'arabesk legend singer', funTrait: 'emotional tear-streaked face and microphone' },
+        'Şahan Gökbakar': { gender: 'male', profession: 'comedy actor', funTrait: 'funny grimace and wacky pose' },
+        'Özcan Deniz': { gender: 'male', profession: 'pop singer and actor', funTrait: 'romantic pose with rose' },
+        'Serdar Ortaç': { gender: 'male', profession: 'pop singer', funTrait: 'energetic dance pose with sequins' },
+        'Yılmaz Erdoğan': { gender: 'male', profession: 'director and comedian', funTrait: 'thoughtful expression with film camera' },
+        'Şener Şen': { gender: 'male', profession: 'legendary actor', funTrait: 'wise expression with newspaper' },
+        'Kenan İmirzalıoğlu': { gender: 'male', profession: 'TV drama star', funTrait: 'intense mysterious gaze' },
+        'Kıvanç Tatlıtuğ': { gender: 'male', profession: 'heartthrob actor', funTrait: 'charming smile with styled hair' },
+        'Cüneyt Arkın': { gender: 'male', profession: 'action movie star', funTrait: 'martial arts pose with cape' },
+        // Politicians
+        'Recep Tayyip Erdoğan': { gender: 'male', profession: 'statesman politician', funTrait: 'confident podium pose with suit' },
+        'Ekrem İmamoğlu': { gender: 'male', profession: 'mayor politician', funTrait: 'friendly wave with big smile' },
+        // Sports
+        'Fatih Terim': { gender: 'male', profession: 'legendary football coach', funTrait: 'intense sideline pose with suit and whistle' },
+        'Arda Turan': { gender: 'male', profession: 'football player', funTrait: 'celebration pose with jersey' },
+        'Hakan Şükür': { gender: 'male', profession: 'football legend', funTrait: 'goal celebration with raised arms' },
+        // Female singers
+        'Kibariye': { gender: 'female', profession: 'folk singer', funTrait: 'joyful dancing with colorful traditional dress' },
+        'Demet Akalın': { gender: 'female', profession: 'pop diva', funTrait: 'glamorous pose with blonde hair' },
+        'Hande Yener': { gender: 'female', profession: 'pop star', funTrait: 'edgy modern look with fashion outfit' },
+        // Famous Turkish actresses
+        'Türkan Şoray': { gender: 'female', profession: 'legendary cinema actress', funTrait: 'classic movie star pose with headscarf' },
+        'Hülya Koçyiğit': { gender: 'female', profession: 'cinema legend', funTrait: 'elegant vintage style with pearls' },
+        'Fatma Girik': { gender: 'female', profession: 'classic actress', funTrait: 'strong feminine pose with determination' },
+        'Filiz Akın': { gender: 'female', profession: 'golden age actress', funTrait: 'glamorous 60s style with beehive hair' },
         // Additional female celebrities
         'Fahriye Evcen': { gender: 'female', profession: 'glamorous actress', funTrait: 'elegant beauty with flowing hair' },
         'Bergüzar Korel': { gender: 'female', profession: 'drama actress', funTrait: 'intense dramatic expression' },
@@ -363,6 +389,8 @@ app.post('/api/sessions/:joinCode/join', async (req, res) => {
         'Gülben Ergen': { gender: 'female', profession: 'pop singer', funTrait: 'energetic performance pose' },
         'Nurgül Yeşilçay': { gender: 'female', profession: 'drama actress', funTrait: 'elegant sophisticated look' },
         'Beren Saat': { gender: 'female', profession: 'TV actress', funTrait: 'intense dramatic gaze' },
+        // Folk musicians
+        'Aşık Mahzuni Şerif': { gender: 'male', profession: 'folk poet musician', funTrait: 'playing saz with wise beard' },
       };
 
       // Get profile or create generic one based on name
