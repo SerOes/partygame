@@ -52,17 +52,20 @@ interface TabooCard {
 // Turn phases
 type TurnPhase = 'WAITING' | 'SELECTING' | 'PERFORMING' | 'RESULT';
 
-// Category data
+// Category data with generated Nano Banana images
 const CATEGORIES = [
-    { id: 'tuerkei', name: { de: 'Türkei Spezial', tr: 'Türkiye Özel' }, icon: '🇹🇷' },
-    { id: 'musik_hits', name: { de: 'Musik 2025', tr: 'Müzik 2025' }, icon: '🎵' },
-    { id: 'filme_serien', name: { de: 'Filme & Serien', tr: 'Filmler & Diziler' }, icon: '🎬' },
-    { id: 'sport', name: { de: 'Sport 2025', tr: 'Spor 2025' }, icon: '⚽' },
-    { id: 'prominente', name: { de: 'Prominente', tr: 'Ünlüler' }, icon: '⭐' },
-    { id: 'tech_gaming', name: { de: 'Tech & Gaming', tr: 'Teknoloji & Oyunlar' }, icon: '🎮' },
-    { id: 'popkultur', name: { de: 'Popkultur', tr: 'Popüler Kültür' }, icon: '📱' },
-    { id: 'essen_trinken', name: { de: 'Essen & Trinken', tr: 'Yemek & İçecek' }, icon: '🍕' },
-    { id: 'silvester', name: { de: 'Silvester', tr: 'Yılbaşı' }, icon: '🎆' },
+    { id: 'tuerkei', name: { de: 'Türkei Spezial', tr: 'Türkiye Özel' }, icon: '🇹🇷', image: '/images/categories/tuerkei.png' },
+    { id: 'musik_hits', name: { de: 'Musik 2025', tr: 'Müzik 2025' }, icon: '🎵', image: '/images/categories/musik_hits.png' },
+    { id: 'filme_serien', name: { de: 'Filme & Serien', tr: 'Filmler & Diziler' }, icon: '🎬', image: '/images/categories/filme_serien.png' },
+    { id: 'sport', name: { de: 'Sport 2025', tr: 'Spor 2025' }, icon: '⚽', image: '/images/categories/sport.png' },
+    { id: 'prominente', name: { de: 'Prominente', tr: 'Ünlüler' }, icon: '⭐', image: '/images/categories/prominente.png' },
+    { id: 'tech_gaming', name: { de: 'Tech & Gaming', tr: 'Teknoloji & Oyunlar' }, icon: '🎮', image: '/images/categories/tech_gaming.png' },
+    { id: 'popkultur', name: { de: 'Popkultur', tr: 'Popüler Kültür' }, icon: '📱', image: '/images/categories/popkultur.png' },
+    { id: 'essen_trinken', name: { de: 'Essen & Trinken', tr: 'Yemek & İçecek' }, icon: '🍕', image: '/images/categories/essen_trinken.png' },
+    { id: 'silvester', name: { de: 'Silvester', tr: 'Yılbaşı' }, icon: '🎆', image: '/images/categories/silvester.png' },
+    { id: 'oesterreich', name: { de: 'Österreich', tr: 'Avusturya' }, icon: '🇦🇹', image: '/images/categories/oesterreich.png' },
+    { id: 'weltgeschehen', name: { de: 'Weltgeschehen', tr: 'Dünya Olayları' }, icon: '🌍', image: '/images/categories/weltgeschehen.png' },
+    { id: 'wissenschaft', name: { de: 'Wissenschaft', tr: 'Bilim' }, icon: '🔬', image: '/images/categories/wissenschaft.png' },
 ];
 
 const BingoGame: React.FC<BingoGameProps> = ({ isAdmin }) => {

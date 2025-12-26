@@ -9,8 +9,27 @@ import { PrismaClient } from '@prisma/client';
 import { GoogleGenAI } from '@google/genai';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as crypto from 'crypto';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const prisma = new PrismaClient();
+
+// Same encryption key as server
+const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || 'silvester-party-app-secret-key-32';
+
+function decrypt(text: string): string {
+    const parts = text.split(':');
+    const iv = Buffer.from(parts.shift()!, 'hex');
+    const encryptedText = parts.join(':');
+    const key = crypto.scryptSync(ENCRYPTION_KEY, 'salt', 32);
+    const decipher = crypto.createDecipheriv('aes-256-cbc', key, iv);
+    let decrypted = decipher.update(encryptedText, 'hex', 'utf8');
+    decrypted += decipher.final('utf8');
+    return decrypted;
+}
 
 // Category prompts for funny Nano Banana style images
 const CATEGORY_PROMPTS = [
@@ -68,7 +87,10 @@ async function getApiKey(): Promise<string | null> {
     const setting = await prisma.settings.findUnique({
         where: { key: 'gemini_api_key' }
     });
-    return setting?.value || process.env.GEMINI_API_KEY || null;
+    if (setting?.value) {
+        return decrypt(setting.value);
+    }
+    return process.env.GEMINI_API_KEY || null;
 }
 
 async function generateCategoryImages() {
