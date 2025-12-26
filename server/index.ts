@@ -322,17 +322,46 @@ app.post('/api/sessions/:joinCode/join', async (req, res) => {
     try {
       const ai = await getGeminiClient();
 
-      // Generate fun avatar - avoid specific celebrity names to prevent content filtering
-      // Use first letter and a fun party theme instead
+      // Celebrity profiles for caricature generation (without using actual names)
+      // Maps secret names to their profession/traits for funny caricatures
+      const celebrityProfiles: Record<string, { gender: string; profession: string; funTrait: string }> = {
+        'Sibel Can': { gender: 'female', profession: 'pop diva singer', funTrait: 'dramatic hand gestures and sparkly dress' },
+        'Tarkan': { gender: 'male', profession: 'pop star singer', funTrait: 'dramatic hair flip and leather jacket' },
+        'Müjde Ar': { gender: 'female', profession: 'glamorous actress', funTrait: 'vintage Hollywood style with fur coat' },
+        'Kemal Sunal': { gender: 'male', profession: 'comedy actor', funTrait: 'confused expression with messy hair' },
+        'Barış Manço': { gender: 'male', profession: 'rock musician', funTrait: 'long mustache and colorful vest' },
+        'Sezen Aksu': { gender: 'female', profession: 'legendary singer', funTrait: 'elegant pose with microphone' },
+        'Ajda Pekkan': { gender: 'female', profession: 'superstar diva', funTrait: 'blonde hair and glamorous sunglasses' },
+        'Cem Yılmaz': { gender: 'male', profession: 'stand-up comedian', funTrait: 'expressive face telling a joke' },
+        'Neşet Ertaş': { gender: 'male', profession: 'folk musician', funTrait: 'playing traditional instrument with hat' },
+        'Zeki Müren': { gender: 'male', profession: 'flamboyant singer', funTrait: 'colorful costume with big jewelry' },
+        'Bülent Ersoy': { gender: 'female', profession: 'dramatic diva singer', funTrait: 'extravagant gown and big hair' },
+        'Ibrahim Tatlıses': { gender: 'male', profession: 'arabesk singer', funTrait: 'mustache and emotional expression' },
+        'Hülya Avşar': { gender: 'female', profession: 'TV personality', funTrait: 'confident pose with blonde hair' },
+        'Adile Naşit': { gender: 'female', profession: 'comedy actress', funTrait: 'motherly expression with apron' },
+        'Münir Özkul': { gender: 'male', profession: 'theater actor', funTrait: 'wise old man with glasses' },
+        'Orhan Gencebay': { gender: 'male', profession: 'arabesk musician', funTrait: 'playing saz with emotional face' },
+      };
+
+      // Get profile or create generic one based on name
+      const profile = celebrityProfiles[secretName] || {
+        gender: secretName.endsWith('a') || secretName.endsWith('e') ? 'female' : 'male',
+        profession: 'entertainer',
+        funTrait: 'party hat and confetti'
+      };
+
       const firstLetter = secretName.charAt(0).toUpperCase();
-      const avatarPrompt = `Create a fun, colorful cartoon avatar portrait of a cheerful person celebrating New Year's Eve.
-- Style: Cute cartoon/anime style with vibrant colors
-- The character has the letter "${firstLetter}" on their festive outfit
-- They are wearing a sparkly party hat and holding champagne or sparklers
-- Background has confetti, fireworks and celebration theme
-- Joyful, happy expression, looking at camera
-- Square format, high quality
-- NO text or words in the image except the letter on outfit`;
+
+      // Create funny caricature prompt based on profession
+      const avatarPrompt = `Create a hilarious cartoon caricature portrait:
+- Subject: A funny ${profile.gender} ${profile.profession}
+- Style: Exaggerated cartoon caricature, colorful, comedic
+- Expression: ${profile.funTrait}
+- The character has a big letter "${firstLetter}" badge on their outfit
+- Celebrating New Year's Eve with confetti and sparkles
+- Humorous, over-the-top personality shining through
+- Square format, vibrant colors, fun and silly mood
+- NO text except the letter badge, NO real person likeness`;
 
       console.log(`🎨 Generating avatar for ${secretName}...`);
 
