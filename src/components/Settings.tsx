@@ -3,6 +3,54 @@ import { api, useGameStore } from '../stores/gameStore';
 
 const API_URL = 'http://localhost:3001';
 
+// TTS Toggle Component
+const TTSToggle: React.FC = () => {
+    const { session, socket } = useGameStore();
+    const [ttsEnabled, setTtsEnabled] = useState(session?.ttsEnabled ?? true);
+    const [isLoading, setIsLoading] = useState(false);
+
+    useEffect(() => {
+        setTtsEnabled(session?.ttsEnabled ?? true);
+    }, [session?.ttsEnabled]);
+
+    const handleToggle = async () => {
+        if (!session) return;
+
+        setIsLoading(true);
+        const newValue = !ttsEnabled;
+
+        try {
+            await fetch(`${API_URL}/api/sessions/${session.id}/toggle-tts`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ enabled: newValue })
+            });
+            setTtsEnabled(newValue);
+        } catch (e) {
+            console.error('Failed to toggle TTS:', e);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    return (
+        <div className="flex items-center justify-between">
+            <span className="text-white/80">
+                {ttsEnabled ? '🔊 Aktiviert' : '🔇 Deaktiviert'}
+            </span>
+            <button
+                onClick={handleToggle}
+                disabled={isLoading || !session}
+                className={`relative w-14 h-7 rounded-full transition-colors ${ttsEnabled ? 'bg-green-500' : 'bg-gray-600'
+                    } ${isLoading ? 'opacity-50' : ''}`}
+            >
+                <div className={`absolute top-1 w-5 h-5 bg-white rounded-full shadow transition-transform ${ttsEnabled ? 'translate-x-8' : 'translate-x-1'
+                    }`} />
+            </button>
+        </div>
+    );
+};
+
 interface SettingsProps {
     onClose: () => void;
 }
@@ -156,6 +204,15 @@ const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                                 API-Key muss zuerst konfiguriert werden
                             </p>
                         )}
+                    </div>
+
+                    {/* TTS Settings */}
+                    <div className="border-t border-white/10 pt-6">
+                        <h3 className="text-lg font-bold text-white/80 mb-3">🔊 Sprachausgabe (TTS)</h3>
+                        <p className="text-sm text-white/50 mb-4">
+                            Fragen werden automatisch vorgelesen wenn aktiviert.
+                        </p>
+                        <TTSToggle />
                     </div>
 
                     {/* Status Messages */}
