@@ -78,6 +78,7 @@ const QuizGame: React.FC<QuizGameProps> = ({ isAdmin }) => {
     const [reactions, setReactions] = useState<Reaction[]>([]);
     const [messages, setMessages] = useState<Message[]>([]);
     const [showMessageInput, setShowMessageInput] = useState(false);
+    const [isTransitioningToLeaderboard, setIsTransitioningToLeaderboard] = useState(false);
     const [myTeamName, setMyTeamName] = useState('');
 
     const hasLoadedRef = useRef(false);
@@ -475,6 +476,8 @@ const QuizGame: React.FC<QuizGameProps> = ({ isAdmin }) => {
         } else {
             // Last category - show final leaderboard
             console.log('🏁 Emitting reveal-answers for final leaderboard');
+            // Set transitioning state to show loading instead of question
+            setIsTransitioningToLeaderboard(true);
             if (socket && session) {
                 socket.emit('reveal-answers', session.id);
             }
@@ -529,6 +532,19 @@ const QuizGame: React.FC<QuizGameProps> = ({ isAdmin }) => {
         }
         return currentQuestion.question;
     };
+
+    // Show transition loading screen while waiting for phase change to LEADERBOARD
+    if (isTransitioningToLeaderboard) {
+        return (
+            <div className="flex flex-col items-center justify-center min-h-[60vh] px-4 text-center">
+                <div className="glass rounded-3xl p-8 max-w-md w-full">
+                    <div className="text-6xl mb-4 animate-bounce">🏆</div>
+                    <h2 className="text-3xl font-titan text-yellow-400 mb-4">Endergebnis wird geladen...</h2>
+                    <div className="animate-spin w-8 h-8 border-4 border-pink-500 border-t-transparent rounded-full mx-auto"></div>
+                </div>
+            </div>
+        );
+    }
 
     // Anonymous scoreboard after category
     if (showScoreboard) {
