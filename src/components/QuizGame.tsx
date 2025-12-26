@@ -132,6 +132,7 @@ const QuizGame: React.FC<QuizGameProps> = ({ isAdmin }) => {
     const selectedCategories = JSON.parse(selectedCategoriesStr) as string[];
 
     useEffect(() => {
+        console.log('🎮 [QuizGame] Mounted with currentTeamId:', currentTeamId, '| isAdmin:', isAdmin);
         loadCategories();
         setupSocketListeners();
         const savedLang = localStorage.getItem('playerLanguage');
