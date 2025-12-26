@@ -71,7 +71,7 @@ interface GameState {
     setModeratorText: (text: string) => void;
     updateTeamScore: (teamId: string, score: number) => void;
     addTeam: (team: Team) => void;
-    setPhase: (phase: GamePhase) => void;
+    setPhase: (phase: GamePhase, teams?: Team[]) => void;
     reset: () => void;
 }
 
@@ -250,12 +250,15 @@ export const useGameStore = create<GameState>((set, get) => ({
         }
     },
 
-    setPhase: (phase: GamePhase) => {
+    setPhase: (phase: GamePhase, teams?: Team[]) => {
         const { session, socket } = get();
         if (session) {
-            // Immediately update local session phase to trigger React re-render
-            console.log('📣 [gameStore.setPhase] Updating phase from', session.phase, 'to', phase);
-            set({ session: { ...session, phase } });
+            // Immediately update local session phase (and optionally teams) to trigger React re-render
+            console.log('📣 [gameStore.setPhase] Updating phase from', session.phase, 'to', phase, teams ? `with ${teams.length} teams` : 'without teams');
+            const updatedSession = teams
+                ? { ...session, phase, teams }  // Update both phase and teams
+                : { ...session, phase };         // Only update phase
+            set({ session: updatedSession });
             // Also notify server (for persistence)
             if (socket) {
                 socket.emit('change-phase', { sessionId: session.id, phase });

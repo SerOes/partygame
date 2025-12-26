@@ -309,9 +309,10 @@ const QuizGame: React.FC<QuizGameProps> = ({ isAdmin }) => {
 
         socket.on('answers-revealed', (data: { teams?: any[] }) => {
             console.log('📣 [QuizGame] answers-revealed event received with teams:', data?.teams?.length);
-            // Directly update the phase in gameStore (bypassing the broken gameStore socket listener)
-            console.log('📣 [QuizGame] Setting phase to LEADERBOARD directly');
-            setPhase('LEADERBOARD');
+            console.log('📣 [QuizGame] Team data:', data?.teams?.map(t => ({ realName: t.realName, secretName: t.secretName, score: t.score })));
+            // Directly update the phase AND teams in gameStore (atomic update to avoid race condition)
+            console.log('📣 [QuizGame] Setting phase to LEADERBOARD with fresh teams');
+            setPhase('LEADERBOARD', data?.teams);  // Pass fresh teams from server
             // Set transitioning state for ALL players (not just host)
             setIsTransitioningToLeaderboard(true);
             // Hide any overlay so App.tsx can render the Leaderboard
@@ -319,7 +320,7 @@ const QuizGame: React.FC<QuizGameProps> = ({ isAdmin }) => {
             setShowBreak(false);
             // Force update isLoading to ensure proper state
             setIsLoading(false);
-            console.log('📣 [QuizGame] Phase set to LEADERBOARD, states cleared');
+            console.log('📣 [QuizGame] Phase set to LEADERBOARD with teams, states cleared');
         });
     };
 
