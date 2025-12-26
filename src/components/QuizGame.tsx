@@ -458,12 +458,17 @@ const QuizGame: React.FC<QuizGameProps> = ({ isAdmin }) => {
     };
 
     const handleNextCategory = () => {
+        // Immediately hide scoreboard to prevent visual loop
+        setShowScoreboard(false);
+
         const nextCatIdx = currentCategoryIdx + 1;
         if (nextCatIdx < selectedCategories.length) {
             if (socket && session) {
                 socket.emit('next-category', { sessionId: session.id, categoryIndex: nextCatIdx });
             }
         } else {
+            // Last category - show final leaderboard
+            console.log('🏁 Emitting reveal-answers for final leaderboard');
             if (socket && session) {
                 socket.emit('reveal-answers', session.id);
             }

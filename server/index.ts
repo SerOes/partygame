@@ -342,11 +342,27 @@ app.post('/api/sessions/:joinCode/join', async (req, res) => {
         'Adile Naşit': { gender: 'female', profession: 'comedy actress', funTrait: 'motherly expression with apron' },
         'Münir Özkul': { gender: 'male', profession: 'theater actor', funTrait: 'wise old man with glasses' },
         'Orhan Gencebay': { gender: 'male', profession: 'arabesk musician', funTrait: 'playing saz with emotional face' },
+        // Additional female celebrities
+        'Fahriye Evcen': { gender: 'female', profession: 'glamorous actress', funTrait: 'elegant beauty with flowing hair' },
+        'Bergüzar Korel': { gender: 'female', profession: 'drama actress', funTrait: 'intense dramatic expression' },
+        'Tuba Büyüküstün': { gender: 'female', profession: 'TV star actress', funTrait: 'sophisticated and elegant pose' },
+        'Demet Akbağ': { gender: 'female', profession: 'comedy actress', funTrait: 'funny expressive face' },
+        'Yıldız Tilbe': { gender: 'female', profession: 'pop singer', funTrait: 'colorful outfit with guitar' },
+        'Ebru Gündeş': { gender: 'female', profession: 'pop diva', funTrait: 'glamorous stage outfit' },
+        'Hadise': { gender: 'female', profession: 'pop star', funTrait: 'dancing pose with modern style' },
+        'Gülben Ergen': { gender: 'female', profession: 'pop singer', funTrait: 'energetic performance pose' },
+        'Nurgül Yeşilçay': { gender: 'female', profession: 'drama actress', funTrait: 'elegant sophisticated look' },
+        'Beren Saat': { gender: 'female', profession: 'TV actress', funTrait: 'intense dramatic gaze' },
       };
 
       // Get profile or create generic one based on name
+      // Turkish female names often end in: a, e, i (Ayşe, Fatma, Sibel, etc.)
+      // Male names often end in: n, r, t, k, l (Tarkan, Orhan, Kemal, etc.)
+      const femaleEndings = ['a', 'e', 'i', 'ü', 'ı'];
+      const isFemale = femaleEndings.some(ending => secretName.toLowerCase().endsWith(ending));
+
       const profile = celebrityProfiles[secretName] || {
-        gender: secretName.endsWith('a') || secretName.endsWith('e') ? 'female' : 'male',
+        gender: isFemale ? 'female' : 'male',
         profession: 'entertainer',
         funTrait: 'party hat and confetti'
       };
