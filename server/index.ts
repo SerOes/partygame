@@ -27,7 +27,7 @@ const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || 'silvester-party-app-secret
 const IV_LENGTH = 16;
 
 app.use(cors({ origin: true, credentials: true }));
-app.use(express.json());
+app.use(express.json({ limit: '10mb' })); // Increased limit for avatar images
 
 // ==================== SEED DATA ====================
 
