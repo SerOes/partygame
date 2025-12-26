@@ -83,6 +83,12 @@ const QuizGame: React.FC<QuizGameProps> = ({ isAdmin }) => {
 
     const hasLoadedRef = useRef(false);
 
+    // When phase changes to LEADERBOARD, return null to let App.tsx render Leaderboard component
+    if (session?.phase === 'LEADERBOARD') {
+        console.log('🎯 [QuizGame] Phase is LEADERBOARD, returning null to show Leaderboard');
+        return null;
+    }
+
     const hostLanguage = (session?.language || 'de') as Language;
 
     const t = {
