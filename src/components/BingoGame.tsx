@@ -37,6 +37,7 @@ type CellStatus = 'empty' | 'active' | 'won' | 'locked';
 interface BingoCell {
     category: string;
     categoryIcon: string;
+    categoryImage: string;
     type: 'EXPLAIN' | 'PANTOMIME' | 'DRAW';
     status: CellStatus;
     wonByTeamId?: string;
@@ -140,12 +141,21 @@ const BingoGame: React.FC<BingoGameProps> = ({ isAdmin }) => {
         }
     }[language];
 
-    // Initialize grid
+    // Initialize grid from server (host generates, others sync)
     useEffect(() => {
-        initializeGrid();
+        if (!socket || !session) return;
+
         setupSocketListeners();
+
+        // Host initializes grid, others request current state
+        if (isAdmin) {
+            socket.emit('bingo-init-grid', { sessionId: session.id });
+        } else {
+            socket.emit('bingo-request-grid', { sessionId: session.id });
+        }
+
         return () => cleanupSocketListeners();
-    }, []);
+    }, [socket, session?.id]);
 
     // Timer countdown
     useEffect(() => {
@@ -168,6 +178,7 @@ const BingoGame: React.FC<BingoGameProps> = ({ isAdmin }) => {
         const newGrid: BingoCell[] = shuffledCategories.map(cat => ({
             category: cat.id,
             categoryIcon: cat.icon,
+            categoryImage: cat.image,
             type: types[Math.floor(Math.random() * types.length)],
             status: 'empty'
         }));
@@ -179,6 +190,15 @@ const BingoGame: React.FC<BingoGameProps> = ({ isAdmin }) => {
 
     const setupSocketListeners = () => {
         if (!socket) return;
+
+        // Receive synchronized grid from server
+        socket.on('bingo-grid-sync', (data: { grid: BingoCell[]; currentTurnTeamIndex: number }) => {
+            console.log('📡 Received grid sync:', data.grid.length, 'cells');
+            setGrid(data.grid);
+            setCurrentTurnTeamIndex(data.currentTurnTeamIndex);
+            setIsLoading(false);
+            setTurnPhase('SELECTING');
+        });
 
         // Cell selected by active team
         socket.on('bingo-cell-selected', (data: { cellIndex: number; teamId: string; card: TabooCard }) => {
@@ -245,6 +265,7 @@ const BingoGame: React.FC<BingoGameProps> = ({ isAdmin }) => {
 
     const cleanupSocketListeners = () => {
         if (!socket) return;
+        socket.off('bingo-grid-sync');
         socket.off('bingo-cell-selected');
         socket.off('bingo-round-started');
         socket.off('bingo-buzzed');
@@ -523,31 +544,44 @@ const BingoGame: React.FC<BingoGameProps> = ({ isAdmin }) => {
                             className={`aspect-square rounded-2xl flex flex-col items-center justify-center p-3 text-center transition-all ${cellClass}`}
                         >
                             {cell.status === 'won' && cell.wonByTeamId ? (
-                                <div className="flex flex-col items-center">
+                                <div className="flex flex-col items-center h-full justify-center">
                                     {getTeamById(cell.wonByTeamId)?.avatar ? (
-                                        <img src={getTeamById(cell.wonByTeamId)?.avatar} alt="" className="w-12 h-12 rounded-full border-2 border-green-400" />
+                                        <img src={getTeamById(cell.wonByTeamId)?.avatar} alt="" className="w-16 h-16 rounded-full border-4 border-green-400" />
                                     ) : (
-                                        <div className="w-12 h-12 rounded-full bg-green-500 flex items-center justify-center text-xl font-bold">
+                                        <div className="w-16 h-16 rounded-full bg-green-500 flex items-center justify-center text-2xl font-bold">
                                             {getTeamById(cell.wonByTeamId)?.secretName?.[0]}
                                         </div>
                                     )}
-                                    <span className="text-xs text-green-400 mt-1 truncate max-w-full">
+                                    <span className="text-sm text-green-400 mt-2 font-bold truncate max-w-full">
                                         {getTeamById(cell.wonByTeamId)?.realName}
                                     </span>
                                 </div>
                             ) : cell.status === 'locked' ? (
-                                <span className="text-4xl opacity-50">🔒</span>
+                                <div className="flex flex-col items-center h-full justify-center">
+                                    <span className="text-6xl opacity-50">🔒</span>
+                                    <span className="text-xs text-gray-500 mt-2">Gesperrt</span>
+                                </div>
                             ) : (
-                                <>
-                                    <span className="text-3xl mb-1">{cell.categoryIcon}</span>
-                                    <span className="text-3xl mb-1">{ACTIVITY_ICONS[cell.type]}</span>
-                                    <span className="text-xs font-bold leading-tight text-white/80">
-                                        {getCategoryName(cell.category)}
-                                    </span>
-                                    <span className="text-xs text-white/40">
-                                        {ACTIVITY_NAMES[language][cell.type]}
-                                    </span>
-                                </>
+                                <div className="flex flex-col h-full w-full">
+                                    {/* Top: Category + Activity labels */}
+                                    <div className="text-center py-2">
+                                        <span className="text-sm font-bold text-white leading-tight block">
+                                            {getCategoryName(cell.category)}
+                                        </span>
+                                        <span className="text-xs text-cyan-400">
+                                            {ACTIVITY_ICONS[cell.type]} {ACTIVITY_NAMES[language][cell.type]}
+                                        </span>
+                                    </div>
+                                    {/* Bottom: Category image (60% height) */}
+                                    <div className="flex-1 flex items-center justify-center px-2 pb-2">
+                                        <img
+                                            src={cell.categoryImage}
+                                            alt={getCategoryName(cell.category)}
+                                            className="max-h-full max-w-full object-contain rounded-xl"
+                                            style={{ maxHeight: '60%' }}
+                                        />
+                                    </div>
+                                </div>
                             )}
                         </button>
                     );

@@ -1304,6 +1304,74 @@ io.on('connection', (socket) => {
 
   // ========== BINGO GAME EVENTS ==========
 
+  // Categories for Bingo grid
+  const BINGO_GRID_CATEGORIES = [
+    { id: 'tuerkei', icon: '🇹🇷', image: '/images/categories/tuerkei.png' },
+    { id: 'musik_hits', icon: '🎵', image: '/images/categories/musik_hits.png' },
+    { id: 'filme_serien', icon: '🎬', image: '/images/categories/filme_serien.png' },
+    { id: 'sport', icon: '⚽', image: '/images/categories/sport.png' },
+    { id: 'prominente', icon: '⭐', image: '/images/categories/prominente.png' },
+    { id: 'tech_gaming', icon: '🎮', image: '/images/categories/tech_gaming.png' },
+    { id: 'popkultur', icon: '📱', image: '/images/categories/popkultur.png' },
+    { id: 'essen_trinken', icon: '🍕', image: '/images/categories/essen_trinken.png' },
+    { id: 'silvester', icon: '🎆', image: '/images/categories/silvester.png' },
+    { id: 'oesterreich', icon: '🇦🇹', image: '/images/categories/oesterreich.png' },
+    { id: 'weltgeschehen', icon: '🌍', image: '/images/categories/weltgeschehen.png' },
+    { id: 'wissenschaft', icon: '🔬', image: '/images/categories/wissenschaft.png' },
+  ];
+
+  const GRID_ACTIVITY_TYPES = ['EXPLAIN', 'PANTOMIME', 'DRAW'];
+
+  // Initialize synchronized grid for all players
+  socket.on('bingo-init-grid', async (data: { sessionId: string }) => {
+    console.log(`🎲 Initializing Bingo grid for session ${data.sessionId}`);
+
+    // Shuffle categories and pick 9
+    const shuffled = [...BINGO_GRID_CATEGORIES].sort(() => Math.random() - 0.5).slice(0, 9);
+
+    // Create grid with random activity types
+    const grid = shuffled.map(cat => ({
+      category: cat.id,
+      categoryIcon: cat.icon,
+      categoryImage: cat.image,
+      type: GRID_ACTIVITY_TYPES[Math.floor(Math.random() * GRID_ACTIVITY_TYPES.length)],
+      status: 'empty',
+      wonByTeamId: null
+    }));
+
+    // Store grid in session bingoState
+    try {
+      await prisma.gameSession.update({
+        where: { id: data.sessionId },
+        data: { bingoState: JSON.stringify({ grid, currentTurnTeamIndex: 0 }) }
+      });
+    } catch (e) {
+      console.error('Failed to save bingo state:', e);
+    }
+
+    // Broadcast to all players
+    io.to(data.sessionId).emit('bingo-grid-sync', {
+      grid,
+      currentTurnTeamIndex: 0
+    });
+    console.log(`📡 Grid synced to all players in ${data.sessionId}`);
+  });
+
+  // Request current grid state (for late joiners)
+  socket.on('bingo-request-grid', async (data: { sessionId: string }) => {
+    try {
+      const session = await prisma.gameSession.findUnique({
+        where: { id: data.sessionId }
+      });
+      if (session?.bingoState) {
+        const state = JSON.parse(session.bingoState);
+        socket.emit('bingo-grid-sync', state);
+      }
+    } catch (e) {
+      console.error('Failed to fetch bingo state:', e);
+    }
+  });
+
   // Team selects a cell
   socket.on('bingo-select-cell', (data: {
     sessionId: string;
