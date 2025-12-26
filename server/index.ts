@@ -1045,11 +1045,14 @@ io.on('connection', (socket) => {
   });
 
   socket.on('reveal-answers', async (sessionId: string) => {
+    console.log('🏁 [Server] reveal-answers received for session:', sessionId);
     await prisma.gameSession.update({
       where: { id: sessionId },
       data: { showAnswers: true, phase: 'LEADERBOARD' }
     });
+    console.log('🏁 [Server] DB updated, phase set to LEADERBOARD, emitting answers-revealed');
     io.to(sessionId).emit('answers-revealed');
+    console.log('🏁 [Server] answers-revealed emitted to session:', sessionId);
   });
 
   // Real-time category toggle sync

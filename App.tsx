@@ -152,6 +152,7 @@ const App: React.FC = () => {
 
   const isAdmin = role === 'admin';
   const phase = session?.phase || 'LOBBY';
+  console.log('🎯 [App.tsx] Current phase:', phase, '| session?.phase:', session?.phase);
 
   // Render game content based on phase
   const renderGameContent = () => {

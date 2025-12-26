@@ -171,9 +171,14 @@ export const useGameStore = create<GameState>((set, get) => ({
         });
 
         socket.on('answers-revealed', () => {
+            console.log('📣 [gameStore] answers-revealed event received');
             const { session } = get();
             if (session) {
+                console.log('📣 [gameStore] Setting phase to LEADERBOARD, current phase:', session.phase);
                 set({ session: { ...session, showAnswers: true, phase: 'LEADERBOARD' } });
+                console.log('📣 [gameStore] Phase updated to LEADERBOARD');
+            } else {
+                console.log('❌ [gameStore] No session found in answers-revealed handler');
             }
         });
 

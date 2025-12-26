@@ -251,8 +251,12 @@ const QuizGame: React.FC<QuizGameProps> = ({ isAdmin }) => {
         // But only if we're not already in LEADERBOARD phase (prevents loop)
         socket.on('show-scoreboard', () => {
             const currentSession = useGameStore.getState().session;
+            console.log('📊 [QuizGame] show-scoreboard event received, phase:', currentSession?.phase);
             if (currentSession?.phase !== 'LEADERBOARD') {
+                console.log('📊 [QuizGame] Setting showScoreboard=true');
                 setShowScoreboard(true);
+            } else {
+                console.log('📊 [QuizGame] BLOCKED - already in LEADERBOARD phase');
             }
         });
 
@@ -296,11 +300,13 @@ const QuizGame: React.FC<QuizGameProps> = ({ isAdmin }) => {
         });
 
         socket.on('answers-revealed', () => {
+            console.log('📣 [QuizGame] answers-revealed event received');
             // Hide any overlay so App.tsx can render the Leaderboard
             setShowScoreboard(false);
             setShowBreak(false);
             // Force update isLoading to ensure proper state
             setIsLoading(false);
+            console.log('📣 [QuizGame] States cleared: showScoreboard=false, showBreak=false, isLoading=false');
         });
     };
 
