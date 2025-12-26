@@ -415,9 +415,16 @@ const QuizGame: React.FC<QuizGameProps> = ({ isAdmin }) => {
     };
 
     const submitAnswer = async (answerIndex: number) => {
-        if (!currentTeamId || !questions[currentIdx]) return;
+        console.log('🎯 [submitAnswer] Called with:', { currentTeamId, questionId: questions[currentIdx]?.id, answerIndex });
+
+        if (!currentTeamId || !questions[currentIdx]) {
+            console.error('❌ [submitAnswer] Cannot submit - missing:', { currentTeamId, hasQuestion: !!questions[currentIdx] });
+            return;
+        }
+
         try {
-            await fetch(`${API_URL}/api/sessions/${session?.id}/answer`, {
+            console.log('📤 [submitAnswer] Submitting to server...');
+            const response = await fetch(`${API_URL}/api/sessions/${session?.id}/answer`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -426,8 +433,10 @@ const QuizGame: React.FC<QuizGameProps> = ({ isAdmin }) => {
                     answerIndex
                 })
             });
+            const result = await response.json();
+            console.log('✅ [submitAnswer] Server response:', result);
         } catch (e) {
-            console.error('Failed to submit answer:', e);
+            console.error('❌ [submitAnswer] Failed to submit answer:', e);
         }
     };
 
