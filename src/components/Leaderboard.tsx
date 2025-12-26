@@ -53,87 +53,61 @@ const Leaderboard: React.FC = () => {
     return (
         <div className="max-w-3xl mx-auto px-4 py-8">
             <h2 className="text-5xl font-titan text-center text-yellow-400 neon-glow mb-10">
-                {t.title}
+                🏆 {t.title}
             </h2>
 
-            {/* Podium */}
-            {sortedTeams.length >= 3 && (
-                <div className="flex justify-center items-end gap-4 mb-12">
-                    {[1, 0, 2].map((displayIdx) => {
-                        const actualIdx = displayIdx;
-                        const team = sortedTeams[actualIdx];
-                        if (!team) return null;
-                        const style = getPodiumStyle(actualIdx);
+            {/* Show all teams with scores */}
+            {sortedTeams.length > 0 ? (
+                <div className="space-y-4 mb-8">
+                    {sortedTeams.map((team, idx) => {
+                        const medal = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : `${idx + 1}.`;
+                        const isWinner = idx === 0;
 
                         return (
-                            <div key={team.id} className="flex flex-col items-center">
-                                <div className={`${style.size} rounded-full ring-4 ${style.ring} mb-3 overflow-hidden bg-gradient-to-br from-purple-500 to-pink-600 flex items-center justify-center shadow-lg`}>
-                                    <span className="text-2xl font-bold">{team.secretName[0]}</span>
-                                </div>
-
-                                <div className={`${style.height} w-20 md:w-24 bg-gradient-to-t ${style.bg} rounded-t-2xl flex items-center justify-center`}>
-                                    <span className="text-4xl font-titan">{actualIdx + 1}</span>
-                                </div>
-
-                                <div className="mt-3 text-center">
-                                    <div className="font-bold text-white">
-                                        {showRealNames ? team.realName : team.secretName}
+                            <div
+                                key={team.id}
+                                className={`glass rounded-2xl p-5 flex items-center justify-between ${isWinner ? 'border-2 border-yellow-400 bg-yellow-400/10' : ''
+                                    }`}
+                            >
+                                <div className="flex items-center gap-4">
+                                    <span className="text-3xl">{medal}</span>
+                                    {team.avatar ? (
+                                        <img src={team.avatar} alt="" className="w-12 h-12 rounded-full" />
+                                    ) : (
+                                        <div className="w-12 h-12 rounded-full bg-gradient-to-br from-purple-500 to-pink-600 flex items-center justify-center">
+                                            <span className="text-xl font-bold">{team.secretName?.[0] || '?'}</span>
+                                        </div>
+                                    )}
+                                    <div>
+                                        <div className={`font-bold ${isWinner ? 'text-yellow-400 text-xl' : 'text-white'}`}>
+                                            {team.realName || team.secretName}
+                                        </div>
+                                        <div className="text-white/50 text-sm">
+                                            ({team.secretName})
+                                        </div>
                                     </div>
-                                    <div className={`font-bold ${actualIdx === 0 ? 'text-yellow-400 text-xl' : 'text-white/60'}`}>
-                                        {team.score} {t.points}
-                                    </div>
+                                </div>
+                                <div className={`font-titan text-2xl ${isWinner ? 'text-yellow-400' : 'text-cyan-400'}`}>
+                                    {team.score} {t.points}
                                 </div>
                             </div>
                         );
                     })}
                 </div>
-            )}
-
-            {/* Rest of teams */}
-            {sortedTeams.length > 3 && (
-                <div className="space-y-3 mb-8">
-                    {sortedTeams.slice(3).map((team, idx) => (
-                        <div key={team.id} className="glass rounded-xl p-4 flex items-center justify-between">
-                            <div className="flex items-center gap-3">
-                                <span className="w-8 h-8 bg-white/10 rounded-full flex items-center justify-center font-bold">
-                                    {idx + 4}
-                                </span>
-                                <span className="font-bold">
-                                    {showRealNames ? team.realName : team.secretName}
-                                </span>
-                            </div>
-                            <span className="text-white/60">{team.score} {t.points}</span>
-                        </div>
-                    ))}
+            ) : (
+                <div className="text-center text-white/50 mb-8">
+                    Keine Teams gefunden...
                 </div>
             )}
 
-            {/* Actions */}
-            <div className="space-y-4">
+            {/* Action - just finish button */}
+            <div className="mt-8">
                 <button
-                    onClick={() => setShowRealNames(!showRealNames)}
-                    className="w-full py-4 glass border-2 border-pink-500 rounded-full font-bold text-pink-400 hover:bg-pink-500 hover:text-white transition-all"
+                    onClick={() => setPhase('FINISHED')}
+                    className="w-full py-4 glass border-2 border-pink-500 rounded-full text-pink-400 hover:bg-pink-500 hover:text-white font-bold transition-all"
                 >
-                    🎭 {t.reveal}
+                    🎉 Neue Party starten
                 </button>
-
-                {session?.phase === 'LEADERBOARD' && (
-                    <>
-                        <button
-                            onClick={() => setPhase('BINGO')}
-                            className="w-full py-5 bg-orange-500 hover:bg-orange-400 text-white font-titan text-xl rounded-full transition-all"
-                        >
-                            {t.nextRound}
-                        </button>
-
-                        <button
-                            onClick={() => setPhase('FINISHED')}
-                            className="w-full py-4 glass border-2 border-white/20 rounded-full text-white/50 hover:border-white/50 hover:text-white transition-all"
-                        >
-                            {t.finish}
-                        </button>
-                    </>
-                )}
             </div>
         </div>
     );
