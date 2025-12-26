@@ -48,6 +48,8 @@ interface TabooCard {
     forbiddenWords: string[];
     type: string;
     category: string;
+    hint?: string;       // Hint shown after 60 seconds
+    difficulty?: number; // 1-5 difficulty level
 }
 
 // Turn phases
@@ -78,11 +80,13 @@ const BingoGame: React.FC<BingoGameProps> = ({ isAdmin }) => {
     const [currentTurnTeamIndex, setCurrentTurnTeamIndex] = useState(0);
     const [activeCell, setActiveCell] = useState<number | null>(null);
     const [tabooCard, setTabooCard] = useState<TabooCard | null>(null);
-    const [timer, setTimer] = useState(60);
+    const [timer, setTimer] = useState(120); // 120 seconds per round
     const [timerActive, setTimerActive] = useState(false);
     const [buzzedBy, setBuzzedBy] = useState<string | null>(null);
     const [showWinner, setShowWinner] = useState<Team | null>(null);
     const [isLoading, setIsLoading] = useState(true);
+    const [showHint, setShowHint] = useState(false); // Show hint after 60s
+    const [roundStarted, setRoundStarted] = useState(false); // Hide term until round starts
 
     // Golden Showdown state
     const [gameMode, setGameMode] = useState<'NORMAL' | 'SHOWDOWN'>('NORMAL');
@@ -165,10 +169,16 @@ const BingoGame: React.FC<BingoGameProps> = ({ isAdmin }) => {
         return () => cleanupSocketListeners();
     }, [socket, session?.id]);
 
-    // Timer countdown
+    // Timer countdown + hint trigger at 60s
     useEffect(() => {
         if (!timerActive || timer <= 0) return;
-        const interval = setInterval(() => setTimer(t => t - 1), 1000);
+        const interval = setInterval(() => {
+            setTimer(t => {
+                // Show hint when timer hits 60 seconds
+                if (t === 61) setShowHint(true);
+                return t - 1;
+            });
+        }, 1000);
         return () => clearInterval(interval);
     }, [timerActive, timer]);
 
@@ -243,14 +253,18 @@ const BingoGame: React.FC<BingoGameProps> = ({ isAdmin }) => {
 
         // Correct answer
         socket.on('bingo-correct', (data: { cellIndex: number; teamId: string }) => {
+            console.log('📥 bingo-correct received:', data);
             setTimerActive(false);
-            setGrid(prev => prev.map((cell, i) =>
-                i === data.cellIndex ? { ...cell, status: 'won', wonByTeamId: data.teamId } : cell
-            ));
-            setTimeout(() => {
-                checkForWinner(data.teamId);
-                if (!showWinner) advanceToNextTurn();
-            }, 1500);
+            setGrid(prev => {
+                const newGrid = prev.map((cell, i) =>
+                    i === data.cellIndex ? { ...cell, status: 'won' as const, wonByTeamId: data.teamId } : cell
+                );
+                console.log('📊 Grid updated, checking for winner...');
+                // Check winner after grid update - pass the new grid
+                setTimeout(() => checkForWinner(data.teamId), 100);
+                return newGrid;
+            });
+            setTimeout(() => advanceToNextTurn(), 1500);
         });
 
         // Time ran out
@@ -386,19 +400,29 @@ const BingoGame: React.FC<BingoGameProps> = ({ isAdmin }) => {
             language
         });
 
-        // Mark cell as active locally (server will sync real card to all players)
+        // Deselect previous cell and mark new one as active
         setActiveCell(cellIndex);
-        setGrid(prev => prev.map((c, i) =>
-            i === cellIndex ? { ...c, status: 'active' } : c
-        ));
+        setRoundStarted(false); // Hide term until round starts
+        setShowHint(false); // Reset hint
+        setGrid(prev => prev.map((c, i) => {
+            if (i === cellIndex) return { ...c, status: 'active' };
+            // Deselect previous active cell
+            if (c.status === 'active') return { ...c, status: 'empty' };
+            return c;
+        }));
     };
 
     const handleStartRound = () => {
-        if (!isAdmin || !session || !socket) return;
+        // Active player (isMyTurn) OR host can start the round
+        if (!isMyTurn && !isAdmin) return;
+        if (!session || !socket) return;
+
         socket.emit('bingo-start-round', { sessionId: session.id });
         setTurnPhase('PERFORMING');
-        setTimer(60);
+        setTimer(120); // 120 seconds
         setTimerActive(true);
+        setShowHint(false); // Reset hint
+        setRoundStarted(true); // Now show the term
     };
 
     const handleBuzz = () => {
@@ -412,7 +436,17 @@ const BingoGame: React.FC<BingoGameProps> = ({ isAdmin }) => {
     };
 
     const handleCorrect = () => {
-        if (!isAdmin || !socket || !session || activeCell === null) return;
+        console.log('✅ handleCorrect called:', {
+            isAdmin,
+            activeCell,
+            activeTeamId: activeTeam?.id,
+            turnPhase
+        });
+        if (!isAdmin || !socket || !session || activeCell === null) {
+            console.log('❌ handleCorrect blocked - missing data');
+            return;
+        }
+        console.log('📤 Emitting bingo-correct to server');
         socket.emit('bingo-correct', {
             sessionId: session.id,
             cellIndex: activeCell,
@@ -455,6 +489,14 @@ const BingoGame: React.FC<BingoGameProps> = ({ isAdmin }) => {
     };
 
     const checkForWinner = (teamId: string) => {
+        console.log('🏆 checkForWinner called:', { teamId, gridLength: grid.length });
+
+        // Make sure grid is initialized
+        if (grid.length !== 9) {
+            console.log('⚠️ Grid not ready yet:', grid.length);
+            return;
+        }
+
         // Check all 8 winning lines
         const lines = [
             [0, 1, 2], [3, 4, 5], [6, 7, 8], // Rows
@@ -464,7 +506,12 @@ const BingoGame: React.FC<BingoGameProps> = ({ isAdmin }) => {
 
         for (const line of lines) {
             const cells = line.map(i => grid[i]);
-            if (cells.every(c => c.status === 'won' && c.wonByTeamId === teamId)) {
+            // Add null check
+            if (cells.some(c => !c)) {
+                console.log('⚠️ Some cells undefined in line:', line);
+                continue;
+            }
+            if (cells.every(c => c?.status === 'won' && c?.wonByTeamId === teamId)) {
                 const winner = teams.find(t => t.id === teamId);
                 if (winner) {
                     setShowWinner(winner);
@@ -842,9 +889,19 @@ const BingoGame: React.FC<BingoGameProps> = ({ isAdmin }) => {
                     let cellClass = 'glass border-2 border-white/10';
                     let isSelectable = false;
 
+                    // Team colors for won cells
+                    const TEAM_COLORS = [
+                        { bg: 'bg-cyan-500/30', border: 'border-cyan-500', text: 'text-cyan-400' },
+                        { bg: 'bg-pink-500/30', border: 'border-pink-500', text: 'text-pink-400' },
+                        { bg: 'bg-yellow-500/30', border: 'border-yellow-500', text: 'text-yellow-400' },
+                        { bg: 'bg-purple-500/30', border: 'border-purple-500', text: 'text-purple-400' },
+                        { bg: 'bg-green-500/30', border: 'border-green-500', text: 'text-green-400' },
+                    ];
+
                     if (cell.status === 'won' && cell.wonByTeamId) {
-                        const winTeam = getTeamById(cell.wonByTeamId);
-                        cellClass = 'bg-green-500/30 border-2 border-green-500';
+                        const teamIndex = teams.findIndex(t => t.id === cell.wonByTeamId);
+                        const colors = TEAM_COLORS[teamIndex % TEAM_COLORS.length];
+                        cellClass = `${colors.bg} border-2 ${colors.border}`;
                     } else if (cell.status === 'locked') {
                         cellClass = 'bg-gray-800/80 border-2 border-gray-600 opacity-60';
                     } else if (cell.status === 'active') {
@@ -924,16 +981,26 @@ const BingoGame: React.FC<BingoGameProps> = ({ isAdmin }) => {
                             {ACTIVITY_RULES[language][tabooCard.type as keyof typeof ACTIVITY_RULES['de']]}
                         </div>
 
-                        {/* Performer View: Show term, hide forbidden words */}
+                        {/* Performer View: Show term only after round started */}
                         {isPerformer && (
                             <div className="bg-white/5 rounded-2xl p-4">
                                 <span className="text-xs uppercase text-white/40 mb-1 block">{t.term}</span>
-                                <div className="text-3xl font-bold text-white">{tabooCard.term}</div>
+                                <div className="text-3xl font-bold text-white">
+                                    {roundStarted ? tabooCard.term : '???'}
+                                </div>
                             </div>
                         )}
 
-                        {/* Jury View: Show term AND forbidden words */}
-                        {(isJury || isAdmin) && (
+                        {/* Hint display (after 60 seconds) - visible to all */}
+                        {showHint && tabooCard.hint && (
+                            <div className="bg-blue-500/20 border border-blue-500/50 rounded-xl p-4 mb-4 animate-pulse">
+                                <span className="text-blue-400 font-bold">💡 HINWEIS:</span>
+                                <p className="text-white text-lg mt-1">{tabooCard.hint}</p>
+                            </div>
+                        )}
+
+                        {/* Jury View: Show term AND forbidden words only after round started */}
+                        {(isJury || (isAdmin && !isMyTurn)) && roundStarted && (
                             <>
                                 <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-3 mb-4">
                                     <span className="text-red-400 font-bold">{t.attention}</span>

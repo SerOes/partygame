@@ -1429,7 +1429,9 @@ io.on('connection', (socket) => {
           term: randomCard.term,
           forbiddenWords,
           type: randomCard.type,
-          category: randomCard.category
+          category: randomCard.category,
+          hint: randomCard.hint || undefined,
+          difficulty: randomCard.difficulty || 3
         }
       });
     } catch (e) {
