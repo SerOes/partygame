@@ -844,6 +844,162 @@ correctIndex ist 0-3 (0=A, 1=B, 2=C, 3=D). NUR JSON!`;
   }
 });
 
+// Regenerate ALL Bingo cards (delete existing and create new ones)
+const BINGO_CATEGORIES = [
+  { id: 'filme_serien', nameDE: 'Filme & Serien 2025', nameTR: 'Filmler & Diziler 2025' },
+  { id: 'musik_hits', nameDE: 'Musik & Hits 2025', nameTR: 'Müzik & Hitlar 2025' },
+  { id: 'sport', nameDE: 'Sport 2025', nameTR: 'Spor 2025' },
+  { id: 'weltgeschehen', nameDE: 'Weltgeschehen 2025', nameTR: 'Dünya Olayları 2025' },
+  { id: 'oesterreich', nameDE: 'Österreich Spezial', nameTR: 'Avusturya Özel' },
+  { id: 'tuerkei', nameDE: 'Türkei Spezial', nameTR: 'Türkiye Özel' },
+  { id: 'tech_gaming', nameDE: 'Tech & Gaming', nameTR: 'Teknoloji & Oyunlar' },
+  { id: 'popkultur', nameDE: 'Popkultur & Memes', nameTR: 'Popüler Kültür & Memeler' },
+  { id: 'prominente', nameDE: 'Prominente & Stars', nameTR: 'Ünlüler & Yıldızlar' },
+  { id: 'essen_trinken', nameDE: 'Essen & Trinken', nameTR: 'Yemek & İçecek' },
+  { id: 'silvester', nameDE: 'Silvester & Traditionen', nameTR: 'Yılbaşı & Gelenekler' },
+  { id: 'wissenschaft', nameDE: 'Wissenschaft 2025', nameTR: 'Bilim 2025' },
+];
+
+const ACTIVITY_TYPES = ['EXPLAIN', 'PANTOMIME', 'DRAW', 'HUM'];
+
+app.post('/api/regenerate-bingo-cards', async (req, res) => {
+  try {
+    // Delete all existing bingo cards
+    await prisma.bingoCard.deleteMany({});
+    console.log('🗑️ Deleted all existing Bingo cards');
+
+    const ai = await getGeminiClient();
+
+    // Start background generation process
+    res.json({
+      message: '🎲 Bingo-Karten Generierung gestartet! Dies kann mehrere Minuten dauern.',
+      categories: BINGO_CATEGORIES.length
+    });
+
+    // Run generation in background
+    (async () => {
+      let totalCards = 0;
+      const CARDS_PER_BATCH = 25;
+      const BATCHES_PER_CATEGORY = 4; // 4 batches × 25 = ~100 cards per category per language
+
+      for (const category of BINGO_CATEGORIES) {
+        console.log(`📦 Processing: ${category.nameDE}`);
+
+        // Generate German cards
+        for (let batch = 0; batch < BATCHES_PER_CATEGORY; batch++) {
+          const promptDE = `Du bist ein Party-Spielemaster. Generiere ${CARDS_PER_BATCH} Begriffe für ein Tabu/Activity-Spiel.
+Kategorie: "${category.nameDE}"
+
+Für jeden Begriff:
+1. Ein bekannter, lustiger Begriff (Filmtitel, Person, Trend, etc.)
+2. 5 verbotene Wörter, die man beim Erklären NICHT benutzen darf
+
+Mache die Begriffe aktuell (2024/2025) und lustig für eine Silvesterparty!
+Falls "Türkei Spezial": Türkische Popstars, Essen, Traditionen.
+Falls "Österreich Spezial": Österreichische Promis, Dialekt, Traditionen.
+
+Antworte NUR mit JSON-Array:
+[
+  { "term": "Begriff", "forbiddenWords": ["verboten1", "verboten2", "verboten3", "verboten4", "verboten5"] }
+]`;
+
+          try {
+            const response = await ai.models.generateContent({
+              model: 'gemini-3-flash-preview',
+              contents: promptDE
+            });
+
+            const responseText = response.text || '';
+            const jsonMatch = responseText.match(/\[[\s\S]*\]/);
+            if (jsonMatch) {
+              const cards = JSON.parse(jsonMatch[0]);
+              if (Array.isArray(cards)) {
+                for (const card of cards) {
+                  if (card.term && card.forbiddenWords) {
+                    const type = ACTIVITY_TYPES[Math.floor(Math.random() * ACTIVITY_TYPES.length)];
+                    await prisma.bingoCard.create({
+                      data: {
+                        category: category.id,
+                        term: card.term,
+                        type,
+                        forbiddenWords: JSON.stringify(card.forbiddenWords),
+                        language: 'de'
+                      }
+                    });
+                    totalCards++;
+                  }
+                }
+              }
+            }
+          } catch (e: any) {
+            console.error(`Error DE batch ${batch + 1} for ${category.nameDE}:`, e.message);
+          }
+
+          await new Promise(resolve => setTimeout(resolve, 1500));
+        }
+
+        // Generate Turkish cards
+        for (let batch = 0; batch < BATCHES_PER_CATEGORY; batch++) {
+          const promptTR = `Sen bir parti oyun ustasısın. Tabu/Activity tarzında ${CARDS_PER_BATCH} terim oluştur.
+Kategori: "${category.nameTR}"
+
+Her terim için:
+1. Bilinen, eğlenceli bir terim (film adı, kişi, trend vb.)
+2. Açıklarken KULLANILMAMASI gereken 5 yasak kelime
+
+Terimleri güncel (2024/2025) ve yılbaşı partisi için eğlenceli yap!
+
+SADECE JSON-Array olarak cevap ver:
+[
+  { "term": "Terim", "forbiddenWords": ["yasak1", "yasak2", "yasak3", "yasak4", "yasak5"] }
+]`;
+
+          try {
+            const response = await ai.models.generateContent({
+              model: 'gemini-3-flash-preview',
+              contents: promptTR
+            });
+
+            const responseText = response.text || '';
+            const jsonMatch = responseText.match(/\[[\s\S]*\]/);
+            if (jsonMatch) {
+              const cards = JSON.parse(jsonMatch[0]);
+              if (Array.isArray(cards)) {
+                for (const card of cards) {
+                  if (card.term && card.forbiddenWords) {
+                    const type = ACTIVITY_TYPES[Math.floor(Math.random() * ACTIVITY_TYPES.length)];
+                    await prisma.bingoCard.create({
+                      data: {
+                        category: category.id,
+                        term: card.term,
+                        type,
+                        forbiddenWords: JSON.stringify(card.forbiddenWords),
+                        language: 'tr'
+                      }
+                    });
+                    totalCards++;
+                  }
+                }
+              }
+            }
+          } catch (e: any) {
+            console.error(`Error TR batch ${batch + 1} for ${category.nameTR}:`, e.message);
+          }
+
+          await new Promise(resolve => setTimeout(resolve, 1500));
+        }
+
+        console.log(`✅ [${category.nameDE}] Done, total so far: ${totalCards}`);
+      }
+
+      console.log(`🎉 Bingo card generation complete! Total: ${totalCards} cards`);
+    })();
+  } catch (error: any) {
+    console.error('Bingo regeneration error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Seed all categories at once
 app.post('/api/seed-all-questions', async (req, res) => {
   try {

@@ -7,11 +7,15 @@
 
 import { PrismaClient } from '@prisma/client';
 import { GoogleGenAI, Type } from '@google/genai';
-import * as dotenv from 'dotenv';
-
-dotenv.config();
 
 const prisma = new PrismaClient();
+
+async function getApiKey(): Promise<string | null> {
+    const setting = await prisma.settings.findUnique({
+        where: { key: 'gemini_api_key' }
+    });
+    return setting?.value || process.env.GEMINI_API_KEY || process.env.API_KEY || null;
+}
 
 const CATEGORIES = [
     { id: 'filme_serien', nameDE: 'Filme & Serien 2025', nameTR: 'Filmler & Diziler 2025', icon: '🎬' },
@@ -98,9 +102,9 @@ async function generateCardsForCategory(
 async function seedBingoCards() {
     console.log('🎲 Starting Bingo Card Seeding...\n');
 
-    const apiKey = process.env.GEMINI_API_KEY || process.env.API_KEY;
+    const apiKey = await getApiKey();
     if (!apiKey) {
-        console.error('❌ GEMINI_API_KEY not found in environment');
+        console.error('❌ API key not found in database or environment');
         process.exit(1);
     }
 
@@ -111,13 +115,14 @@ async function seedBingoCards() {
     await prisma.bingoCard.deleteMany();
 
     let totalCards = 0;
+    const CARDS_PER_CATEGORY = 85; // 12 categories × 2 languages × 85 ≈ 2040 cards
 
     for (const category of CATEGORIES) {
         console.log(`\n📦 Processing: ${category.icon} ${category.nameDE}`);
 
         // Generate German cards
         console.log('  🇩🇪 Generating German cards...');
-        const deCards = await generateCardsForCategory(ai, category, 'de', 20);
+        const deCards = await generateCardsForCategory(ai, category, 'de', CARDS_PER_CATEGORY);
 
         for (const card of deCards) {
             await prisma.bingoCard.create({
@@ -135,7 +140,7 @@ async function seedBingoCards() {
 
         // Generate Turkish cards
         console.log('  🇹🇷 Generating Turkish cards...');
-        const trCards = await generateCardsForCategory(ai, category, 'tr', 20);
+        const trCards = await generateCardsForCategory(ai, category, 'tr', CARDS_PER_CATEGORY);
 
         for (const card of trCards) {
             await prisma.bingoCard.create({

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useGameStore, api, TabooWord, Team } from '../stores/gameStore';
+import Confetti from './Confetti';
 
 interface BingoGameProps {
     isAdmin: boolean;
@@ -263,12 +264,16 @@ const BingoGame: React.FC<BingoGameProps> = ({ isAdmin }) => {
     // Winner screen
     if (showWinner) {
         return (
-            <div className="flex flex-col items-center justify-center min-h-[80vh] text-center">
+            <div className="flex flex-col items-center justify-center min-h-[80vh] text-center relative">
+                <Confetti particleCount={150} duration={8000} />
+
                 <div className="text-8xl mb-6 animate-bounce">🎉</div>
-                <h1 className="text-5xl font-titan text-yellow-400 neon-glow mb-4">{t.winner}</h1>
-                <div className="glass p-8 rounded-3xl">
+                <h1 className="text-5xl font-titan text-yellow-400 neon-glow mb-2">{t.winner}</h1>
+                <p className="text-2xl text-white/60 mb-6">BINGO!</p>
+
+                <div className="glass p-8 rounded-3xl min-w-[300px]">
                     {showWinner.avatar ? (
-                        <img src={showWinner.avatar} alt="" className="w-32 h-32 rounded-full mx-auto mb-4" />
+                        <img src={showWinner.avatar} alt="" className="w-32 h-32 rounded-full mx-auto mb-4 border-4 border-yellow-400" />
                     ) : (
                         <div className="w-32 h-32 rounded-full bg-gradient-to-br from-pink-500 to-orange-500 flex items-center justify-center text-5xl font-titan mx-auto mb-4">
                             {showWinner.secretName?.[0]}
@@ -290,13 +295,42 @@ const BingoGame: React.FC<BingoGameProps> = ({ isAdmin }) => {
     }
 
     return (
-        <div className="max-w-4xl mx-auto px-4 py-6">
+        <div className="max-w-5xl mx-auto px-4 py-6">
             {/* Header */}
             <div className="text-center mb-6">
                 <h2 className="text-4xl font-titan text-orange-500 neon-glow mb-2">{t.title}</h2>
                 <div className="glass inline-block px-6 py-2 rounded-full text-cyan-400 font-bold">
                     {t.subtitle}
                 </div>
+            </div>
+
+            {/* Team List Bar - Show all players with real names visible */}
+            <div className="glass rounded-2xl px-4 py-3 mb-6 flex flex-wrap gap-3 justify-center">
+                {teams.map((team, idx) => {
+                    const isActive = team.id === activeTeamId;
+                    return (
+                        <div
+                            key={team.id}
+                            className={`flex items-center gap-2 px-3 py-2 rounded-xl transition-all ${isActive ? 'bg-orange-500/30 ring-2 ring-orange-500' : 'bg-white/5'
+                                }`}
+                        >
+                            {team.avatar ? (
+                                <img src={team.avatar} alt="" className="w-10 h-10 rounded-full" />
+                            ) : (
+                                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-pink-500 to-orange-500 flex items-center justify-center text-lg font-bold">
+                                    {team.secretName?.[0]}
+                                </div>
+                            )}
+                            <div className="text-left">
+                                <p className="text-sm font-bold text-white">{team.realName}</p>
+                                <p className="text-xs text-cyan-400">{team.secretName}</p>
+                            </div>
+                            {isActive && (
+                                <span className="text-orange-400 animate-pulse">◀</span>
+                            )}
+                        </div>
+                    );
+                })}
             </div>
 
             {/* Timer */}

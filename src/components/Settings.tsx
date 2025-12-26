@@ -59,6 +59,7 @@ const Settings: React.FC<SettingsProps> = ({ onClose }) => {
     const [apiKey, setApiKey] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const [isRegenerating, setIsRegenerating] = useState(false);
+    const [isRegeneratingBingo, setIsRegeneratingBingo] = useState(false);
     const [error, setError] = useState('');
     const [success, setSuccess] = useState('');
     const { hasApiKey, setHasApiKey } = useGameStore();
@@ -123,6 +124,38 @@ const Settings: React.FC<SettingsProps> = ({ onClose }) => {
             setError(e.message);
         } finally {
             setIsRegenerating(false);
+        }
+    };
+
+    const handleRegenerateBingoCards = async () => {
+        if (!hasApiKey) {
+            setError('API-Key muss zuerst konfiguriert werden');
+            return;
+        }
+
+        if (!confirm('Alle Bingo-Karten werden gelöscht und ~2000 neue Karten generiert (12 Kategorien × 2 Sprachen × 85 Karten). Dies kann mehrere Minuten dauern. Fortfahren?')) {
+            return;
+        }
+
+        setIsRegeneratingBingo(true);
+        setError('');
+        setSuccess('');
+
+        try {
+            const res = await fetch(`${API_URL}/api/regenerate-bingo-cards`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            });
+            const data = await res.json();
+            if (data.error) {
+                setError(data.error);
+            } else {
+                setSuccess(`${data.message}`);
+            }
+        } catch (e: any) {
+            setError(e.message);
+        } finally {
+            setIsRegeneratingBingo(false);
         }
     };
 
@@ -197,6 +230,33 @@ const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                                 </>
                             ) : (
                                 '🔄 Alle Fragen neu generieren'
+                            )}
+                        </button>
+                        {!hasApiKey && (
+                            <p className="text-xs text-red-400 mt-2">
+                                API-Key muss zuerst konfiguriert werden
+                            </p>
+                        )}
+                    </div>
+
+                    {/* Bingo Cards Section */}
+                    <div className="border-t border-white/10 pt-6">
+                        <h3 className="text-lg font-bold text-white/80 mb-3">🎲 Bingo-Karten</h3>
+                        <p className="text-sm text-white/50 mb-4">
+                            Generiere ~2000 Taboo-Karten für Chaos Bingo (12 Kategorien × 2 Sprachen).
+                        </p>
+                        <button
+                            onClick={handleRegenerateBingoCards}
+                            disabled={isRegeneratingBingo || !hasApiKey}
+                            className="w-full py-4 bg-orange-600 hover:bg-orange-500 disabled:bg-gray-600 text-white font-bold rounded-xl transition-colors flex items-center justify-center gap-2"
+                        >
+                            {isRegeneratingBingo ? (
+                                <>
+                                    <div className="animate-spin w-5 h-5 border-2 border-white border-t-transparent rounded-full"></div>
+                                    Generiere Bingo-Karten...
+                                </>
+                            ) : (
+                                '🎲 Alle Bingo-Karten neu generieren'
                             )}
                         </button>
                         {!hasApiKey && (
