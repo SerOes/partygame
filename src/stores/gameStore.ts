@@ -244,8 +244,14 @@ export const useGameStore = create<GameState>((set, get) => ({
 
     setPhase: (phase: GamePhase) => {
         const { session, socket } = get();
-        if (session && socket) {
-            socket.emit('change-phase', { sessionId: session.id, phase });
+        if (session) {
+            // Immediately update local session phase to trigger React re-render
+            console.log('📣 [gameStore.setPhase] Updating phase from', session.phase, 'to', phase);
+            set({ session: { ...session, phase } });
+            // Also notify server (for persistence)
+            if (socket) {
+                socket.emit('change-phase', { sessionId: session.id, phase });
+            }
         }
     },
 
