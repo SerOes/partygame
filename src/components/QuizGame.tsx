@@ -308,12 +308,14 @@ const QuizGame: React.FC<QuizGameProps> = ({ isAdmin }) => {
 
         socket.on('answers-revealed', () => {
             console.log('📣 [QuizGame] answers-revealed event received');
+            // Set transitioning state for ALL players (not just host)
+            setIsTransitioningToLeaderboard(true);
             // Hide any overlay so App.tsx can render the Leaderboard
             setShowScoreboard(false);
             setShowBreak(false);
             // Force update isLoading to ensure proper state
             setIsLoading(false);
-            console.log('📣 [QuizGame] States cleared: showScoreboard=false, showBreak=false, isLoading=false');
+            console.log('📣 [QuizGame] States cleared: isTransitioningToLeaderboard=true, showScoreboard=false, showBreak=false, isLoading=false');
         });
     };
 
