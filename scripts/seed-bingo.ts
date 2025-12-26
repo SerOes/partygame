@@ -7,14 +7,48 @@
 
 import { PrismaClient } from '@prisma/client';
 import { GoogleGenAI, Type } from '@google/genai';
+import * as crypto from 'crypto';
 
 const prisma = new PrismaClient();
+
+// Encryption key must match server/index.ts
+const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || 'silvester-party-app-secret-key-32';
+
+function decrypt(text: string): string {
+    try {
+        const parts = text.split(':');
+        const iv = Buffer.from(parts.shift()!, 'hex');
+        const encryptedText = parts.join(':');
+        const key = crypto.scryptSync(ENCRYPTION_KEY, 'salt', 32);
+        const decipher = crypto.createDecipheriv('aes-256-cbc', key, iv);
+        let decrypted = decipher.update(encryptedText, 'hex', 'utf8');
+        decrypted += decipher.final('utf8');
+        console.log(`✅ Decryption successful: starts with ${decrypted.substring(0, 10)}...`);
+        return decrypted;
+    } catch (error) {
+        console.error(`❌ Decryption failed:`, error);
+        return text; // Return original if decryption fails
+    }
+}
 
 async function getApiKey(): Promise<string | null> {
     const setting = await prisma.settings.findUnique({
         where: { key: 'gemini_api_key' }
     });
-    return setting?.value || process.env.GEMINI_API_KEY || process.env.API_KEY || null;
+    if (setting?.value) {
+        // Try to decrypt if it looks encrypted (contains :)
+        const isEncrypted = setting.value.includes(':');
+        const value = isEncrypted ? decrypt(setting.value) : setting.value;
+        console.log(`🔑 API Key from DB: encrypted=${isEncrypted}, length=${value.length}, starts with: ${value.substring(0, 10)}...`);
+        return value;
+    }
+    // Fallback to environment variable
+    const envKey = process.env.GEMINI_API_KEY || process.env.API_KEY;
+    if (envKey) {
+        console.log(`🔑 API Key from ENV: length=${envKey.length}, starts with: ${envKey.substring(0, 10)}...`);
+        return envKey;
+    }
+    return null;
 }
 
 const CATEGORIES = [
@@ -32,14 +66,14 @@ const CATEGORIES = [
     { id: 'wissenschaft', nameDE: 'Wissenschaft 2025', nameTR: 'Bilim 2025', icon: '🔬' },
 ];
 
-const ACTIVITY_TYPES = ['EXPLAIN', 'PANTOMIME', 'DRAW', 'HUM'];
+const ACTIVITY_TYPES = ['EXPLAIN', 'PANTOMIME', 'DRAW']; // No HUM
 
 async function generateCardsForCategory(
     ai: GoogleGenAI,
     category: typeof CATEGORIES[0],
     language: 'de' | 'tr',
     count: number = 20
-): Promise<{ term: string; type: string; forbiddenWords: string[] }[]> {
+): Promise<{ term: string; type: string; forbiddenWords: string[]; difficulty: number; hint: string }[]> {
     const categoryName = language === 'de' ? category.nameDE : category.nameTR;
 
     const prompt = language === 'de'
@@ -49,19 +83,25 @@ async function generateCardsForCategory(
        Für jeden Begriff:
        1. Ein lustiger, bekannter Begriff passend zur Kategorie (z.B. Filmtitel, Prominenter, Trend)
        2. 5 verbotene Wörter, die man beim Erklären NICHT benutzen darf
+       3. Ein Schwierigkeitsgrad von 1-5 (1=sehr einfach, 5=sehr schwer)
+       4. Ein Hinweis (kurzer Satz, der nach 60 Sekunden angezeigt wird, z.B. "Hat mit Musik zu tun")
        
-       Mache die Begriffe aktuell (2024/2025) und lustig für eine Silvesterparty.
-       Falls Kategorie "Türkei Spezial": Füge türkische Popstars, Essen, Traditionen hinzu.
-       Falls Kategorie "Österreich Spezial": Füge österreichische Dialektwörter, Promis, Traditionen hinzu.`
+       Mische die Schwierigkeiten gleichmäßig:
+       - 1-2: Einfache, sehr bekannte Begriffe (z.B. "Pizza", "Fußball")
+       - 3: Mittelschwer, die meisten kennen es (z.B. "Taylor Swift", "Netflix")
+       - 4-5: Schwieriger, weniger bekannt oder abstrakt (z.B. "Kryptowährung", "Hyperloop")
+       
+       Mache die Begriffe aktuell (2024/2025) und lustig für eine Silvesterparty.`
         : `${count} adet parti oyunu için terim oluştur ("Tabu" veya "Activity" tarzında).
        Kategori: "${categoryName}"
        
        Her terim için:
-       1. Kategoriye uygun eğlenceli, bilinen bir terim (film adı, ünlü, trend vb.)
+       1. Kategoriye uygun eğlenceli, bilinen bir terim
        2. Açıklarken KULLANILMAMASI gereken 5 yasak kelime
+       3. 1-5 arası zorluk derecesi (1=çok kolay, 5=çok zor)
+       4. Bir ipucu (60 saniye sonra gösterilecek kısa cümle)
        
-       Terimleri güncel (2024/2025) ve yılbaşı partisi için eğlenceli yap.
-       "Türkiye Özel" kategorisi ise: Türk pop yıldızları, yemekler, gelenekler ekle.`;
+       Zorlukları eşit dağıt ve güncel (2024/2025) terimleri kullan.`;
 
     try {
         const response = await ai.models.generateContent({
@@ -78,9 +118,11 @@ async function generateCardsForCategory(
                             forbiddenWords: {
                                 type: Type.ARRAY,
                                 items: { type: Type.STRING }
-                            }
+                            },
+                            difficulty: { type: Type.NUMBER },
+                            hint: { type: Type.STRING }
                         },
-                        required: ['term', 'forbiddenWords']
+                        required: ['term', 'forbiddenWords', 'difficulty', 'hint']
                     }
                 }
             }
@@ -89,8 +131,9 @@ async function generateCardsForCategory(
         const cards = JSON.parse(response.text || '[]');
 
         // Assign random activity types
-        return cards.map((card: { term: string; forbiddenWords: string[] }) => ({
+        return cards.map((card: { term: string; forbiddenWords: string[]; difficulty: number; hint: string }) => ({
             ...card,
+            difficulty: Math.min(5, Math.max(1, Math.round(card.difficulty))), // Clamp to 1-5
             type: ACTIVITY_TYPES[Math.floor(Math.random() * ACTIVITY_TYPES.length)]
         }));
     } catch (error) {
@@ -131,7 +174,9 @@ async function seedBingoCards() {
                     term: card.term,
                     type: card.type,
                     forbiddenWords: JSON.stringify(card.forbiddenWords),
-                    language: 'de'
+                    language: 'de',
+                    difficulty: card.difficulty,
+                    hint: card.hint
                 }
             });
         }
@@ -149,7 +194,9 @@ async function seedBingoCards() {
                     term: card.term,
                     type: card.type,
                     forbiddenWords: JSON.stringify(card.forbiddenWords),
-                    language: 'tr'
+                    language: 'tr',
+                    difficulty: card.difficulty,
+                    hint: card.hint
                 }
             });
         }
