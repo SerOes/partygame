@@ -46,6 +46,8 @@ model GameSession {
   currentCategory     Int      @default(0)
   selectedCategories  String   @default("[]") // JSON array of category IDs
   gameType            String   @default("QUIZ") // QUIZ or BINGO
+  activeGame          String?  // Currently active game: "QUIZ" or "BINGO"
+  bingoState          String?  // JSON: { grid: [], activeTurn: {teamId, cellId}, lockedCells: [], wonCells: {} }
   ttsEnabled          Boolean  @default(true)
   showAnswers         Boolean  @default(false) // Antworten erst am Ende zeigen
   createdAt           DateTime @default(now())
@@ -99,13 +101,24 @@ model PlayerAnswer {
   answeredAt  DateTime    @default(now())
 }
 
-// Bingo-Grid
+// Bingo-Grid (runtime state per session)
 model BingoGrid {
   id          String   @id @default(cuid())
   sessionId   String
   categories  String   // JSON array of 9 categories
   cellStatus  String   @default("[]") // JSON array of cell states
   createdAt   DateTime @default(now())
+}
+
+// Bingo-Card (seeded content for Taboo/Activity game)
+model BingoCard {
+  id             String   @id @default(cuid())
+  category       String   // e.g. "Türkei Spezial", "Filme & Serien 2025"
+  term           String   // The word/phrase to guess
+  type           String   // "EXPLAIN", "PANTOMIME", "DRAW", "HUM"
+  forbiddenWords String?  // JSON array ["word1", "word2", "word3", "word4", "word5"]
+  language       String   // "de" or "tr"
+  createdAt      DateTime @default(now())
 }
 
 // Pre-seeded Questions (100 per category for random selection)

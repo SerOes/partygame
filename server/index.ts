@@ -1051,9 +1051,26 @@ io.on('connection', (socket) => {
   socket.on('start-game', async (sessionId: string) => {
     await prisma.gameSession.update({
       where: { id: sessionId },
-      data: { phase: 'CATEGORY_SELECT', currentRound: 1 }
+      data: { phase: 'GAME_SELECT', currentRound: 1 }
     });
     io.to(sessionId).emit('game-started');
+    io.to(sessionId).emit('phase-changed', { phase: 'GAME_SELECT' });
+  });
+
+  socket.on('select-game', async (data: { sessionId: string; gameType: 'QUIZ' | 'BINGO' }) => {
+    const { sessionId, gameType } = data;
+    const newPhase = gameType === 'QUIZ' ? 'CATEGORY_SELECT' : 'BINGO';
+
+    await prisma.gameSession.update({
+      where: { id: sessionId },
+      data: {
+        activeGame: gameType,
+        phase: newPhase
+      }
+    });
+
+    io.to(sessionId).emit('phase-changed', { phase: newPhase });
+    console.log(`🎮 Game selected: ${gameType}, phase now: ${newPhase}`);
   });
 
   socket.on('next-question', async (data: { sessionId: string; questionIndex: number }) => {
@@ -1127,6 +1144,67 @@ io.on('connection', (socket) => {
     socket.to(data.sessionId).emit('questions-broadcast', {
       questions: data.questions
     });
+  });
+
+  // ========== BINGO GAME EVENTS ==========
+
+  // Host selects a cell for a team
+  socket.on('bingo-select-cell', (data: {
+    sessionId: string;
+    cellIndex: number;
+    teamId: string;
+    card: { term: string; forbiddenWords: string[]; type: string; category: string }
+  }) => {
+    console.log(`🎲 Bingo cell ${data.cellIndex} selected by team ${data.teamId}`);
+    io.to(data.sessionId).emit('bingo-cell-selected', {
+      cellIndex: data.cellIndex,
+      teamId: data.teamId,
+      card: data.card
+    });
+  });
+
+  // Player presses buzzer
+  socket.on('bingo-buzz', (data: { sessionId: string; teamId: string }) => {
+    console.log(`🚨 BUZZER! Team ${data.teamId} buzzed!`);
+    io.to(data.sessionId).emit('bingo-buzzed', { teamId: data.teamId });
+  });
+
+  // Host marks cell as success (team guessed correctly)
+  socket.on('bingo-success', async (data: { sessionId: string; cellIndex: number; teamId: string }) => {
+    console.log(`✅ Bingo cell ${data.cellIndex} won by team ${data.teamId}`);
+
+    // Update team score
+    await prisma.team.update({
+      where: { id: data.teamId },
+      data: { score: { increment: 100 } }
+    });
+
+    io.to(data.sessionId).emit('bingo-cell-won', {
+      cellIndex: data.cellIndex,
+      teamId: data.teamId
+    });
+
+    // Check for bingo (3 in a row) - this would need grid state from client
+    // For now, emit to let client check win condition
+  });
+
+  // Host marks cell as fail (buzzer or timeout)
+  socket.on('bingo-fail', (data: { sessionId: string; cellIndex: number }) => {
+    console.log(`❌ Bingo cell ${data.cellIndex} locked`);
+    io.to(data.sessionId).emit('bingo-cell-locked', { cellIndex: data.cellIndex });
+  });
+
+  // Bingo winner detected
+  socket.on('bingo-winner', async (data: { sessionId: string; teamId: string }) => {
+    console.log(`🏆 BINGO! Team ${data.teamId} wins!`);
+
+    // Award bonus points
+    await prisma.team.update({
+      where: { id: data.teamId },
+      data: { score: { increment: 500 } }
+    });
+
+    io.to(data.sessionId).emit('bingo-winner', { teamId: data.teamId });
   });
 
   // Emoji reactions during quiz

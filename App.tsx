@@ -7,6 +7,7 @@ import CategorySelect from './src/components/CategorySelect';
 import PlayerJoin from './src/components/PlayerJoin';
 import QuizGame from './src/components/QuizGame';
 import BingoGame from './src/components/BingoGame';
+import GameDashboard from './src/components/GameDashboard';
 import Leaderboard from './src/components/Leaderboard';
 import Moderator from './components/Moderator';
 
@@ -130,6 +131,21 @@ const App: React.FC = () => {
     }
   };
 
+  const handleSelectGame = (gameType: 'QUIZ' | 'BINGO') => {
+    if (session) {
+      const { socket, setPhase } = useGameStore.getState();
+      if (socket) {
+        socket.emit('select-game', { sessionId: session.id, gameType });
+        // Immediately update local phase based on game type
+        if (gameType === 'QUIZ') {
+          setPhase('CATEGORY_SELECT');
+        } else {
+          setPhase('BINGO');
+        }
+      }
+    }
+  };
+
   const handleCategoriesSelected = async (categoryIds: string[]) => {
     if (session) {
       await api.selectCategories(session.id, categoryIds);
@@ -182,6 +198,15 @@ const App: React.FC = () => {
           <AdminLobby onStartGame={handleStartGame} />
         ) : (
           joinCode && <PlayerJoin joinCode={joinCode} />
+        );
+      case 'GAME_SELECT':
+        return isAdmin ? (
+          <GameDashboard onSelectGame={handleSelectGame} />
+        ) : (
+          <div className="flex flex-col items-center justify-center min-h-[60vh] text-center">
+            <div className="animate-pulse text-4xl mb-4">🎮</div>
+            <p className="text-white/60">{language === 'de' ? 'Host wählt das Spiel...' : 'Host oyun seçiyor...'}</p>
+          </div>
         );
       case 'CATEGORY_SELECT':
         return (

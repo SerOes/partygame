@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { io, Socket } from 'socket.io-client';
 
 export type Language = 'de' | 'tr';
-export type GamePhase = 'LOBBY' | 'CATEGORY_SELECT' | 'QUIZ' | 'BREAK' | 'BINGO' | 'LEADERBOARD' | 'FINISHED';
+export type GamePhase = 'LOBBY' | 'GAME_SELECT' | 'CATEGORY_SELECT' | 'QUIZ' | 'BREAK' | 'BINGO' | 'LEADERBOARD' | 'FINISHED';
 export type UserRole = 'admin' | 'player';
 
 export interface Team {
