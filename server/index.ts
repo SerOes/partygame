@@ -1302,6 +1302,11 @@ io.on('connection', (socket) => {
     });
   });
 
+  // ========== DEBUG LOGGING (from client) ==========
+  socket.on('debug-log', (data: string) => {
+    console.log('🔍 CLIENT DEBUG:', data);
+  });
+
   // ========== BINGO GAME EVENTS ==========
 
   // Categories for Bingo grid
@@ -1372,19 +1377,64 @@ io.on('connection', (socket) => {
     }
   });
 
-  // Team selects a cell
-  socket.on('bingo-select-cell', (data: {
+  // Team selects a cell - fetch real card from DB
+  socket.on('bingo-select-cell', async (data: {
     sessionId: string;
     cellIndex: number;
     teamId: string;
-    card: { term: string; forbiddenWords: string[]; type: string; category: string }
+    category: string;
+    type: string;
+    language: string;
   }) => {
     console.log(`🎲 Bingo cell ${data.cellIndex} selected by team ${data.teamId}`);
-    io.to(data.sessionId).emit('bingo-cell-selected', {
-      cellIndex: data.cellIndex,
-      teamId: data.teamId,
-      card: data.card
-    });
+
+    try {
+      // Fetch random card from DB matching category and type
+      const cards = await prisma.bingoCard.findMany({
+        where: {
+          category: data.category,
+          type: data.type,
+          language: data.language
+        }
+      });
+
+      if (cards.length === 0) {
+        console.log(`⚠️ No cards found for category=${data.category}, type=${data.type}, lang=${data.language}`);
+        // Fallback card
+        io.to(data.sessionId).emit('bingo-cell-selected', {
+          cellIndex: data.cellIndex,
+          teamId: data.teamId,
+          card: {
+            term: `Kein Begriff für ${data.category}`,
+            forbiddenWords: [],
+            type: data.type,
+            category: data.category
+          }
+        });
+        return;
+      }
+
+      // Pick random card
+      const randomCard = cards[Math.floor(Math.random() * cards.length)];
+      const forbiddenWords = randomCard.forbiddenWords
+        ? JSON.parse(randomCard.forbiddenWords)
+        : [];
+
+      console.log(`✅ Found card: "${randomCard.term}" with ${forbiddenWords.length} forbidden words`);
+
+      io.to(data.sessionId).emit('bingo-cell-selected', {
+        cellIndex: data.cellIndex,
+        teamId: data.teamId,
+        card: {
+          term: randomCard.term,
+          forbiddenWords,
+          type: randomCard.type,
+          category: randomCard.category
+        }
+      });
+    } catch (e) {
+      console.error('Failed to fetch bingo card:', e);
+    }
   });
 
   // Host starts the round (60s timer begins)

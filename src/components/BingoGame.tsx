@@ -349,29 +349,45 @@ const BingoGame: React.FC<BingoGameProps> = ({ isAdmin }) => {
     };
 
     const handleCellSelect = async (cellIndex: number) => {
-        if (!isMyTurn || turnPhase !== 'SELECTING') return;
-        if (grid[cellIndex].status !== 'empty') return;
-        if (!session || !socket) return;
+        // Send debug info to server for logging
+        socket?.emit('debug-log', JSON.stringify({
+            source: 'handleCellSelect',
+            cellIndex,
+            isMyTurn,
+            turnPhase,
+            activeTeamId: activeTeam?.id,
+            currentTeamId,
+            currentTurnTeamIndex,
+            teamsCount: teams.length,
+            teams: teams.map(t => ({ id: t.id, name: t.realName }))
+        }));
 
-        // Fetch random card from DB for this category
+        if (!isMyTurn || turnPhase !== 'SELECTING') {
+            socket?.emit('debug-log', `BLOCKED: isMyTurn=${isMyTurn}, turnPhase=${turnPhase}`);
+            return;
+        }
+        if (grid[cellIndex].status !== 'empty') {
+            socket?.emit('debug-log', `BLOCKED: cell status=${grid[cellIndex].status}`);
+            return;
+        }
+        if (!session || !socket) {
+            return;
+        }
+
         const cell = grid[cellIndex];
-        const card: TabooCard = {
-            term: `Begriff für ${cell.category}`, // Will be replaced by API
-            forbiddenWords: ['Wort1', 'Wort2', 'Wort3', 'Wort4', 'Wort5'],
-            type: cell.type,
-            category: cell.category
-        };
 
-        // Emit cell selection
+        // Send cell selection - server will fetch card from DB and broadcast
         socket.emit('bingo-select-cell', {
             sessionId: session.id,
             cellIndex,
             teamId: currentTeamId,
-            card
+            category: cell.category,
+            type: cell.type,
+            language
         });
 
+        // Mark cell as active locally (server will sync real card to all players)
         setActiveCell(cellIndex);
-        setTabooCard(card);
         setGrid(prev => prev.map((c, i) =>
             i === cellIndex ? { ...c, status: 'active' } : c
         ));
@@ -561,10 +577,10 @@ const BingoGame: React.FC<BingoGameProps> = ({ isAdmin }) => {
                         <div
                             key={cardNum}
                             className={`w-24 h-32 rounded-xl flex items-center justify-center text-3xl font-titan ${cardNum < showdownRound
-                                    ? 'bg-gray-600/50 text-gray-500'
-                                    : cardNum === showdownRound
-                                        ? 'bg-gradient-to-br from-yellow-400 to-orange-500 text-black animate-pulse shadow-lg shadow-yellow-500/50'
-                                        : 'bg-gradient-to-br from-yellow-600 to-yellow-800 text-yellow-200'
+                                ? 'bg-gray-600/50 text-gray-500'
+                                : cardNum === showdownRound
+                                    ? 'bg-gradient-to-br from-yellow-400 to-orange-500 text-black animate-pulse shadow-lg shadow-yellow-500/50'
+                                    : 'bg-gradient-to-br from-yellow-600 to-yellow-800 text-yellow-200'
                                 }`}
                         >
                             {cardNum}
@@ -890,8 +906,8 @@ const BingoGame: React.FC<BingoGameProps> = ({ isAdmin }) => {
                 })}
             </div>
 
-            {/* Active Card & Controls */}
-            {tabooCard && turnPhase !== 'SELECTING' && (
+            {/* Active Card & Controls - Show when a cell is selected */}
+            {tabooCard && activeCell !== null && (
                 <div className="flex flex-col lg:flex-row gap-6">
                     {/* Card Display */}
                     <div className="flex-1 glass p-6 rounded-3xl border-2 border-pink-500/30">
