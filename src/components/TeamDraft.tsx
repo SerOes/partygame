@@ -49,11 +49,14 @@ const TRANSLATIONS = {
 };
 
 const TeamDraft: React.FC<TeamDraftProps> = ({ isAdmin }) => {
-    const { session, socket, teams, currentTeamId } = useGameStore();
+    const { session, socket, currentTeamId } = useGameStore();
     const [selectedDifficulty, setSelectedDifficulty] = useState(3);
 
     const language = session?.language === 'tr' ? 'tr' : 'de';
     const t = TRANSLATIONS[language];
+
+    // Access teams from session
+    const teams = session?.teams || [];
 
     // Split teams by faction
     const teamA = useMemo(() => teams.filter(team => team.faction === 'A'), [teams]);
@@ -122,8 +125,8 @@ const TeamDraft: React.FC<TeamDraftProps> = ({ isAdmin }) => {
                                 key={level}
                                 onClick={() => setSelectedDifficulty(level)}
                                 className={`flex-1 py-3 rounded-lg font-bold transition-all ${selectedDifficulty === level
-                                        ? 'bg-pink-500 text-white scale-110'
-                                        : 'bg-white/10 text-white/60 hover:bg-white/20'
+                                    ? 'bg-pink-500 text-white scale-110'
+                                    : 'bg-white/10 text-white/60 hover:bg-white/20'
                                     }`}
                             >
                                 {level}
@@ -136,6 +139,46 @@ const TeamDraft: React.FC<TeamDraftProps> = ({ isAdmin }) => {
                         <span>{t.hard}</span>
                     </div>
                 </div>
+
+                {/* Host Team Selection */}
+                {myTeam && (
+                    <div className="glass rounded-xl p-4 mb-6 max-w-lg mx-auto">
+                        <div className="flex items-center justify-center gap-4 mb-4">
+                            {myTeam.avatar && (
+                                <img src={myTeam.avatar} alt="" className="w-14 h-14 rounded-full border-2 border-white/30" />
+                            )}
+                            <div>
+                                <p className="text-white font-bold">{myTeam.secretName}</p>
+                                <p className="text-white/60 text-sm">
+                                    {myFaction
+                                        ? (myFaction === 'A' ? '🔴 ' + t.teamA : '🔵 ' + t.teamB)
+                                        : language === 'de' ? '❓ Noch nicht zugeordnet' : '❓ Henüz atanmadı'
+                                    }
+                                </p>
+                            </div>
+                        </div>
+                        <div className="flex gap-3">
+                            <button
+                                onClick={() => handleJoinFaction('A')}
+                                className={`flex-1 py-3 rounded-xl font-bold transition-all ${myFaction === 'A'
+                                        ? 'bg-red-500 text-white ring-2 ring-red-300'
+                                        : 'bg-red-500/30 text-red-300 hover:bg-red-500/50'
+                                    }`}
+                            >
+                                {t.joinRed}
+                            </button>
+                            <button
+                                onClick={() => handleJoinFaction('B')}
+                                className={`flex-1 py-3 rounded-xl font-bold transition-all ${myFaction === 'B'
+                                        ? 'bg-blue-500 text-white ring-2 ring-blue-300'
+                                        : 'bg-blue-500/30 text-blue-300 hover:bg-blue-500/50'
+                                    }`}
+                            >
+                                {t.joinBlue}
+                            </button>
+                        </div>
+                    </div>
+                )}
 
                 {/* Two Team Containers */}
                 <div className="grid grid-cols-3 gap-6 max-w-6xl mx-auto">
@@ -200,8 +243,8 @@ const TeamDraft: React.FC<TeamDraftProps> = ({ isAdmin }) => {
                         onClick={handleConfirmAndStart}
                         disabled={teamA.length === 0 || teamB.length === 0}
                         className={`px-8 py-4 rounded-xl font-bold text-xl transition-all ${teamA.length > 0 && teamB.length > 0
-                                ? 'bg-gradient-to-r from-pink-500 to-purple-500 text-white hover:scale-105'
-                                : 'bg-gray-600 text-gray-400 cursor-not-allowed'
+                            ? 'bg-gradient-to-r from-pink-500 to-purple-500 text-white hover:scale-105'
+                            : 'bg-gray-600 text-gray-400 cursor-not-allowed'
                             }`}
                     >
                         {t.confirmStart}

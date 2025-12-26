@@ -1215,7 +1215,8 @@ io.on('connection', (socket) => {
 
   socket.on('select-game', async (data: { sessionId: string; gameType: 'QUIZ' | 'BINGO' }) => {
     const { sessionId, gameType } = data;
-    const newPhase = gameType === 'QUIZ' ? 'CATEGORY_SELECT' : 'BINGO';
+    // BINGO goes to LOBBY_DRAFT first (Team Draft), then to BINGO after teams are confirmed
+    const newPhase = gameType === 'QUIZ' ? 'CATEGORY_SELECT' : 'LOBBY_DRAFT';
 
     await prisma.gameSession.update({
       where: { id: sessionId },
@@ -1345,7 +1346,7 @@ io.on('connection', (socket) => {
         }
       });
 
-      io.to(data.sessionId).emit('game-phase', { phase: 'BINGO' });
+      io.to(data.sessionId).emit('phase-changed', { phase: 'BINGO' });
     } catch (e) {
       console.error('Failed to confirm teams:', e);
     }
@@ -1378,32 +1379,61 @@ io.on('connection', (socket) => {
     // Shuffle categories and pick 9
     const shuffled = [...BINGO_GRID_CATEGORIES].sort(() => Math.random() - 0.5).slice(0, 9);
 
-    // Create grid with random activity types
-    const grid = shuffled.map(cat => ({
+    // Create balanced activity types: 3 of each type for 9 cells
+    const balancedActivityTypes = [
+      'EXPLAIN', 'EXPLAIN', 'EXPLAIN',
+      'PANTOMIME', 'PANTOMIME', 'PANTOMIME',
+      'DRAW', 'DRAW', 'DRAW'
+    ].sort(() => Math.random() - 0.5); // Shuffle the types
+
+    // Create grid with balanced activity types
+    const grid = shuffled.map((cat, index) => ({
       category: cat.id,
       categoryIcon: cat.icon,
       categoryImage: cat.image,
-      type: GRID_ACTIVITY_TYPES[Math.floor(Math.random() * GRID_ACTIVITY_TYPES.length)],
+      type: balancedActivityTypes[index],
       status: 'empty',
       wonByTeamId: null
     }));
 
-    // Store grid in session bingoState
     try {
+      // Get teams for this session to select first performer
+      const session = await prisma.gameSession.findUnique({
+        where: { id: data.sessionId },
+        include: { teams: true }
+      });
+
+      const teams = session?.teams || [];
+      const factionAPlayers = teams.filter(t => t.faction === 'A');
+      const factionBPlayers = teams.filter(t => t.faction === 'B');
+
+      // Pick random first performer from Faction A (since they start)
+      const firstPerformerId = factionAPlayers.length > 0
+        ? factionAPlayers[Math.floor(Math.random() * factionAPlayers.length)].id
+        : null;
+
+      console.log(`🎭 First performer selected: ${firstPerformerId}`);
+
+      // Store grid in session bingoState with performer info
+      const bingoState = {
+        grid,
+        currentTurnFaction: 'A',
+        currentPerformerId: firstPerformerId,
+        usedPerformersA: firstPerformerId ? [firstPerformerId] : [],
+        usedPerformersB: []
+      };
+
       await prisma.gameSession.update({
         where: { id: data.sessionId },
-        data: { bingoState: JSON.stringify({ grid, currentTurnTeamIndex: 0 }) }
+        data: { bingoState: JSON.stringify(bingoState) }
       });
+
+      // Broadcast to all players with performer info
+      io.to(data.sessionId).emit('bingo-grid-sync', bingoState);
+      console.log(`📡 Grid synced to all players in ${data.sessionId}`);
     } catch (e) {
       console.error('Failed to save bingo state:', e);
     }
-
-    // Broadcast to all players
-    io.to(data.sessionId).emit('bingo-grid-sync', {
-      grid,
-      currentTurnTeamIndex: 0
-    });
-    console.log(`📡 Grid synced to all players in ${data.sessionId}`);
   });
 
   // Request current grid state (for late joiners)
@@ -1415,9 +1445,15 @@ io.on('connection', (socket) => {
       if (session?.bingoState) {
         const state = JSON.parse(session.bingoState);
         socket.emit('bingo-grid-sync', state);
+        console.log(`📡 Sent existing grid to player in session ${data.sessionId}`);
+      } else {
+        // No grid yet - notify client to wait and retry
+        console.log(`⏳ No grid yet for session ${data.sessionId}, telling client to wait...`);
+        socket.emit('bingo-grid-pending', { sessionId: data.sessionId });
       }
     } catch (e) {
       console.error('Failed to fetch bingo state:', e);
+      socket.emit('bingo-grid-error', { error: 'Failed to fetch grid state' });
     }
   });
 
@@ -1498,19 +1534,35 @@ io.on('connection', (socket) => {
     });
   });
 
-  // Host marks cell as correct (team wins the cell)
-  socket.on('bingo-correct', async (data: { sessionId: string; cellIndex: number; teamId: string }) => {
-    console.log(`✅ Bingo cell ${data.cellIndex} won by team ${data.teamId}`);
+  // Host marks cell as correct (faction wins the cell)
+  socket.on('bingo-correct', async (data: { sessionId: string; cellIndex: number; faction: 'A' | 'B' }) => {
+    console.log(`✅ Bingo cell ${data.cellIndex} won by faction ${data.faction}`);
 
-    // Update team score
-    await prisma.team.update({
-      where: { id: data.teamId },
-      data: { score: { increment: 100 } }
-    });
+    // Get session to find all players in the winning faction
+    try {
+      const session = await prisma.gameSession.findUnique({
+        where: { id: data.sessionId },
+        include: { teams: true }
+      });
+
+      if (session) {
+        // Update scores for ALL players in the winning faction
+        const winningFactionPlayers = session.teams.filter(t => t.faction === data.faction);
+        for (const player of winningFactionPlayers) {
+          await prisma.team.update({
+            where: { id: player.id },
+            data: { score: { increment: 100 } }
+          });
+        }
+        console.log(`📈 Awarded 100 points to ${winningFactionPlayers.length} players in faction ${data.faction}`);
+      }
+    } catch (e) {
+      console.error('Failed to update scores:', e);
+    }
 
     io.to(data.sessionId).emit('bingo-correct', {
       cellIndex: data.cellIndex,
-      teamId: data.teamId
+      faction: data.faction // Send faction instead of teamId
     });
   });
 
@@ -1524,6 +1576,84 @@ io.on('connection', (socket) => {
   socket.on('bingo-timeout', (data: { sessionId: string }) => {
     console.log(`⏰ Bingo round timed out in session ${data.sessionId}`);
     io.to(data.sessionId).emit('bingo-timeout');
+  });
+
+  // Advance to next turn - switch faction and select new performer
+  socket.on('bingo-advance-turn', async (data: { sessionId: string }) => {
+    console.log(`⏭️ Advancing turn in session ${data.sessionId}`);
+
+    try {
+      const session = await prisma.gameSession.findUnique({
+        where: { id: data.sessionId },
+        include: { teams: true }
+      });
+
+      if (!session?.bingoState) {
+        console.error('No bingo state found for session');
+        return;
+      }
+
+      const state = JSON.parse(session.bingoState);
+      const teams = session.teams;
+
+      // Switch faction
+      const newFaction = state.currentTurnFaction === 'A' ? 'B' : 'A';
+
+      // Get players from new faction
+      const newFactionPlayers = teams.filter(t => t.faction === newFaction);
+      const usedPerformers = newFaction === 'A' ? (state.usedPerformersA || []) : (state.usedPerformersB || []);
+
+      // Find players who haven't performed yet
+      let availablePlayers = newFactionPlayers.filter(p => !usedPerformers.includes(p.id));
+
+      // If everyone has performed, reset the cycle
+      if (availablePlayers.length === 0) {
+        console.log(`🔄 All players in faction ${newFaction} have performed, resetting cycle`);
+        availablePlayers = newFactionPlayers;
+        // Clear used performers for this faction
+        if (newFaction === 'A') {
+          state.usedPerformersA = [];
+        } else {
+          state.usedPerformersB = [];
+        }
+      }
+
+      // Pick random performer from available players
+      const newPerformerId = availablePlayers.length > 0
+        ? availablePlayers[Math.floor(Math.random() * availablePlayers.length)].id
+        : null;
+
+      // Add to used performers list
+      if (newPerformerId) {
+        if (newFaction === 'A') {
+          state.usedPerformersA = [...(state.usedPerformersA || []), newPerformerId];
+        } else {
+          state.usedPerformersB = [...(state.usedPerformersB || []), newPerformerId];
+        }
+      }
+
+      // Update state
+      state.currentTurnFaction = newFaction;
+      state.currentPerformerId = newPerformerId;
+
+      console.log(`🎭 New turn: Faction ${newFaction}, Performer: ${newPerformerId}`);
+
+      // Save to database
+      await prisma.gameSession.update({
+        where: { id: data.sessionId },
+        data: { bingoState: JSON.stringify(state) }
+      });
+
+      // Broadcast to all clients
+      io.to(data.sessionId).emit('bingo-turn-advanced', {
+        currentTurnFaction: newFaction,
+        currentPerformerId: newPerformerId,
+        usedPerformersA: state.usedPerformersA,
+        usedPerformersB: state.usedPerformersB
+      });
+    } catch (e) {
+      console.error('Failed to advance turn:', e);
+    }
   });
 
   // Bingo winner detected (3 in a row!)
@@ -1541,28 +1671,58 @@ io.on('connection', (socket) => {
 
   // ========== GOLDEN SHOWDOWN EVENTS ==========
 
-  // Start Golden Showdown (triggered when grid full + top 2 teams tied)
+  // Start Golden Showdown (triggered when grid full + close game)
   socket.on('showdown-start', async (data: {
     sessionId: string;
-    teamAId: string;
-    teamBId: string
+    factionA: 'A' | 'B';
+    factionB: 'A' | 'B';
+    factionACells?: number;
+    factionBCells?: number;
   }) => {
-    console.log(`🥇 GOLDEN SHOWDOWN! ${data.teamAId} vs ${data.teamBId}`);
+    console.log(`🥇 GOLDEN SHOWDOWN! Faction A (${data.factionACells || '?'} cells) vs Faction B (${data.factionBCells || '?'} cells)`);
 
-    // Fetch team details
-    const teamA = await prisma.team.findUnique({ where: { id: data.teamAId } });
-    const teamB = await prisma.team.findUnique({ where: { id: data.teamBId } });
+    try {
+      // Fetch 3 hard difficulty cards for the showdown (prefer PANTOMIME and DRAW for fairness)
+      const showdownCards = await prisma.bingoCard.findMany({
+        where: {
+          difficulty: { gte: 3 } // Hard cards (difficulty 3+)
+        },
+        take: 10
+      });
 
-    // Random first performer
-    const firstPerformer = Math.random() > 0.5 ? 'A' : 'B';
+      // Shuffle and pick 3
+      const shuffledCards = showdownCards.sort(() => Math.random() - 0.5).slice(0, 3);
 
-    io.to(data.sessionId).emit('showdown-started', {
-      teamA,
-      teamB,
-      firstPerformer,
-      score: { a: 0, b: 0 },
-      round: 1
-    });
+      // Format cards for frontend
+      const cards = shuffledCards.map((card, index) => ({
+        round: index + 1,
+        term: card.term,
+        hint: card.hint,
+        forbiddenWords: card.forbiddenWords ? JSON.parse(card.forbiddenWords) : [],
+        category: card.category,
+        // Alternate types for variety, prefer PANTOMIME and DRAW
+        type: index === 2 ? 'PANTOMIME' : (index % 2 === 0 ? 'DRAW' : 'PANTOMIME')
+      }));
+
+      // Random first performer
+      const firstPerformer: 'A' | 'B' = Math.random() > 0.5 ? 'A' : 'B';
+
+      console.log(`🎴 Showdown cards prepared:`, cards.map(c => c.term));
+      console.log(`🎭 First performer: Faction ${firstPerformer}`);
+
+      io.to(data.sessionId).emit('showdown-started', {
+        factionA: 'A',
+        factionB: 'B',
+        firstPerformer,
+        score: { a: 0, b: 0 },
+        round: 1,
+        cards, // All 3 showdown cards
+        factionACells: data.factionACells || 0,
+        factionBCells: data.factionBCells || 0
+      });
+    } catch (e) {
+      console.error('Failed to start showdown:', e);
+    }
   });
 
   // Start a showdown round with a card
@@ -1594,16 +1754,23 @@ io.on('connection', (socket) => {
   });
 
   // Showdown final winner
-  socket.on('showdown-winner', async (data: { sessionId: string; teamId: string }) => {
-    console.log(`🏆 SHOWDOWN WINNER! Team ${data.teamId}`);
+  socket.on('showdown-winner', async (data: { sessionId: string; faction: 'A' | 'B' }) => {
+    console.log(`🏆 SHOWDOWN WINNER! Faction ${data.faction}`);
 
-    // Award mega bonus
-    await prisma.team.update({
-      where: { id: data.teamId },
-      data: { score: { increment: 1000 } }
-    });
+    try {
+      // Award mega bonus to all players in the winning faction
+      await prisma.team.updateMany({
+        where: {
+          sessionId: data.sessionId,
+          faction: data.faction
+        },
+        data: { score: { increment: 500 } } // 500 bonus for showdown victory
+      });
 
-    io.to(data.sessionId).emit('showdown-finished', { winnerTeamId: data.teamId });
+      io.to(data.sessionId).emit('showdown-finished', { winnerFaction: data.faction });
+    } catch (e) {
+      console.error('Failed to update showdown winner scores:', e);
+    }
   });
 
   // Emoji reactions during quiz

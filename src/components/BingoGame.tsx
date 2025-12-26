@@ -77,16 +77,21 @@ const BingoGame: React.FC<BingoGameProps> = ({ isAdmin }) => {
     // Game state
     const [grid, setGrid] = useState<BingoCell[]>([]);
     const [turnPhase, setTurnPhase] = useState<TurnPhase>('WAITING');
-    const [currentTurnTeamIndex, setCurrentTurnTeamIndex] = useState(0);
+    const [currentTurnFaction, setCurrentTurnFaction] = useState<'A' | 'B'>('A'); // Faction-based turns
     const [activeCell, setActiveCell] = useState<number | null>(null);
     const [tabooCard, setTabooCard] = useState<TabooCard | null>(null);
     const [timer, setTimer] = useState(120); // 120 seconds per round
     const [timerActive, setTimerActive] = useState(false);
     const [buzzedBy, setBuzzedBy] = useState<string | null>(null);
-    const [showWinner, setShowWinner] = useState<Team | null>(null);
+    const [showWinner, setShowWinner] = useState<'A' | 'B' | null>(null); // Faction wins, not individual
     const [isLoading, setIsLoading] = useState(true);
     const [showHint, setShowHint] = useState(false); // Show hint after 60s
     const [roundStarted, setRoundStarted] = useState(false); // Hide term until round starts
+
+    // Performer rotation state - only ONE player per round sees the term
+    const [currentPerformerId, setCurrentPerformerId] = useState<string | null>(null);
+    const [usedPerformersA, setUsedPerformersA] = useState<string[]>([]); // Players who already performed
+    const [usedPerformersB, setUsedPerformersB] = useState<string[]>([]);
 
     // Golden Showdown state
     const [gameMode, setGameMode] = useState<'NORMAL' | 'SHOWDOWN'>('NORMAL');
@@ -95,13 +100,43 @@ const BingoGame: React.FC<BingoGameProps> = ({ isAdmin }) => {
     const [showdownFinalists, setShowdownFinalists] = useState<{ teamA: Team | null; teamB: Team | null }>({ teamA: null, teamB: null });
     const [showdownPerformer, setShowdownPerformer] = useState<'A' | 'B'>('A');
     const [showdownCard, setShowdownCard] = useState<TabooCard | null>(null);
+    const [showdownCards, setShowdownCards] = useState<TabooCard[]>([]); // All 3 cards for showdown
+    const [showdownCellCounts, setShowdownCellCounts] = useState<{ a: number; b: number }>({ a: 0, b: 0 });
 
     const language = (session?.language || 'de') as 'de' | 'tr';
     const teams = session?.teams || [];
-    const activeTeam = teams[currentTurnTeamIndex];
-    const isMyTurn = activeTeam?.id === currentTeamId;
-    const isPerformer = isMyTurn && turnPhase === 'PERFORMING';
-    const isJury = !isMyTurn && turnPhase === 'PERFORMING';
+
+    // Group players by faction
+    const factionA = teams.filter(t => t.faction === 'A');
+    const factionB = teams.filter(t => t.faction === 'B');
+
+    // My team and faction
+    const myTeam = teams.find(t => t.id === currentTeamId);
+    const myFaction = myTeam?.faction;
+
+    // Check if it's my faction's turn (for cell selection)
+    const isMyFactionsTurn = myFaction === currentTurnFaction;
+    const isMyTurn = isMyFactionsTurn; // Alias for backwards compatibility
+
+    // Check if game is in a state where roles matter (cell selected or performing)
+    const isActiveRound = turnPhase === 'PERFORMING' || (turnPhase === 'SELECTING' && activeCell !== null);
+
+    // Check if I am THE designated performer (only I can see the term)
+    const isPerformer = currentTeamId === currentPerformerId && isActiveRound;
+
+    // Check if I'm a teammate of the performer (I need to guess)
+    const isGuesser = isMyFactionsTurn && currentTeamId !== currentPerformerId && isActiveRound;
+
+    // Check if I'm on the opposing team (I can buzz for rule violations)
+    const isJury = !isMyFactionsTurn && isActiveRound;
+
+    // Get the current performer's info for display
+    const currentPerformer = teams.find(t => t.id === currentPerformerId);
+
+    // Active faction name for display
+    const activeFactionName = currentTurnFaction === 'A'
+        ? (language === 'de' ? 'Team Rot' : 'Kırmızı Takım')
+        : (language === 'de' ? 'Team Blau' : 'Mavi Takım');
 
     // Translations
     const t = {
@@ -169,12 +204,12 @@ const BingoGame: React.FC<BingoGameProps> = ({ isAdmin }) => {
         return () => cleanupSocketListeners();
     }, [socket, session?.id]);
 
-    // Timer countdown + hint trigger at 60s
+    // Timer countdown (120s) + hint trigger when 60s remaining
     useEffect(() => {
         if (!timerActive || timer <= 0) return;
         const interval = setInterval(() => {
             setTimer(t => {
-                // Show hint when timer hits 60 seconds
+                // Show hint when 60 seconds remain (after first 60s of 120s round)
                 if (t === 61) setShowHint(true);
                 return t - 1;
             });
@@ -209,30 +244,64 @@ const BingoGame: React.FC<BingoGameProps> = ({ isAdmin }) => {
     const setupSocketListeners = () => {
         if (!socket) return;
 
-        // Receive synchronized grid from server
-        socket.on('bingo-grid-sync', (data: { grid: BingoCell[]; currentTurnTeamIndex: number }) => {
-            console.log('📡 Received grid sync:', data.grid.length, 'cells');
+        // Receive synchronized grid from server with performer info
+        socket.on('bingo-grid-sync', (data: {
+            grid: BingoCell[];
+            currentTurnFaction?: 'A' | 'B';
+            currentPerformerId?: string | null;
+            usedPerformersA?: string[];
+            usedPerformersB?: string[];
+        }) => {
+            console.log('📡 Received grid sync:', data.grid.length, 'cells, performer:', data.currentPerformerId);
             setGrid(data.grid);
-            setCurrentTurnTeamIndex(data.currentTurnTeamIndex);
+            if (data.currentTurnFaction) setCurrentTurnFaction(data.currentTurnFaction);
+            if (data.currentPerformerId !== undefined) setCurrentPerformerId(data.currentPerformerId);
+            if (data.usedPerformersA) setUsedPerformersA(data.usedPerformersA);
+            if (data.usedPerformersB) setUsedPerformersB(data.usedPerformersB);
             setIsLoading(false);
             setTurnPhase('SELECTING');
         });
 
-        // Cell selected by active team
+        // Grid not ready yet - retry after delay
+        socket.on('bingo-grid-pending', () => {
+            console.log('⏳ Grid not ready, retrying in 1.5s...');
+            setTimeout(() => {
+                if (session && socket) {
+                    socket.emit('bingo-request-grid', { sessionId: session.id });
+                }
+            }, 1500);
+        });
+
+        // Error fetching grid
+        socket.on('bingo-grid-error', (data: { error: string }) => {
+            console.error('❌ Grid error:', data.error);
+            setIsLoading(false);
+        });
+
+        // Cell selected by active team - reset any previous active cell first
         socket.on('bingo-cell-selected', (data: { cellIndex: number; teamId: string; card: TabooCard }) => {
             setActiveCell(data.cellIndex);
             setTabooCard(data.card);
-            setGrid(prev => prev.map((cell, i) =>
-                i === data.cellIndex ? { ...cell, status: 'active' } : cell
-            ));
+            // Reset ALL cells to their previous state, then set new one as active
+            setGrid(prev => prev.map((cell, i) => {
+                if (i === data.cellIndex) {
+                    return { ...cell, status: 'active' };
+                } else if (cell.status === 'active') {
+                    // Reset previously active cell back to empty (unless it was won/locked)
+                    return { ...cell, status: 'empty' };
+                }
+                return cell;
+            }));
         });
 
         // Round started by host
         socket.on('bingo-round-started', () => {
             setTurnPhase('PERFORMING');
-            setTimer(60);
+            setRoundStarted(true);
+            setTimer(120); // 120 seconds per round
             setTimerActive(true);
             setBuzzedBy(null);
+            setShowHint(false); // Reset hint, will show after 60 seconds
         });
 
         // Buzzer pressed
@@ -251,17 +320,17 @@ const BingoGame: React.FC<BingoGameProps> = ({ isAdmin }) => {
             setTimeout(() => advanceToNextTurn(), 2500);
         });
 
-        // Correct answer
-        socket.on('bingo-correct', (data: { cellIndex: number; teamId: string }) => {
+        // Correct answer - now receives faction instead of teamId
+        socket.on('bingo-correct', (data: { cellIndex: number; faction: 'A' | 'B' }) => {
             console.log('📥 bingo-correct received:', data);
             setTimerActive(false);
             setGrid(prev => {
                 const newGrid = prev.map((cell, i) =>
-                    i === data.cellIndex ? { ...cell, status: 'won' as const, wonByTeamId: data.teamId } : cell
+                    i === data.cellIndex ? { ...cell, status: 'won' as const, wonByTeamId: data.faction } : cell
                 );
-                console.log('📊 Grid updated, checking for winner...');
-                // Check winner after grid update - pass the new grid
-                setTimeout(() => checkForWinner(data.teamId), 100);
+                console.log('📊 Grid updated, checking for winner with new grid...');
+                // Check winner with the NEW grid directly (avoid closure stale state)
+                setTimeout(() => checkForWinnerWithGrid(newGrid, data.faction), 100);
                 return newGrid;
             });
             setTimeout(() => advanceToNextTurn(), 1500);
@@ -278,29 +347,47 @@ const BingoGame: React.FC<BingoGameProps> = ({ isAdmin }) => {
             setTimeout(() => advanceToNextTurn(), 1500);
         });
 
-        // Winner declared
-        socket.on('bingo-winner', (data: { teamId: string }) => {
-            const winner = teams.find(t => t.id === data.teamId);
-            if (winner) setShowWinner(winner);
+        // Winner declared - now receives faction instead of teamId
+        socket.on('bingo-winner', (data: { faction: 'A' | 'B' }) => {
+            setShowWinner(data.faction);
+        });
+
+        // Turn advanced - new faction and performer
+        socket.on('bingo-turn-advanced', (data: {
+            currentTurnFaction: 'A' | 'B';
+            currentPerformerId: string | null;
+            usedPerformersA: string[];
+            usedPerformersB: string[];
+        }) => {
+            console.log(`⏭️ Turn advanced: Faction ${data.currentTurnFaction}, Performer: ${data.currentPerformerId}`);
+            setCurrentTurnFaction(data.currentTurnFaction);
+            setCurrentPerformerId(data.currentPerformerId);
+            setUsedPerformersA(data.usedPerformersA);
+            setUsedPerformersB(data.usedPerformersB);
         });
 
         // ========== GOLDEN SHOWDOWN LISTENERS ==========
 
         // Showdown started - switch to showdown mode
         socket.on('showdown-started', (data: {
-            teamA: Team;
-            teamB: Team;
+            factionA: 'A' | 'B';
+            factionB: 'A' | 'B';
             firstPerformer: 'A' | 'B';
             score: { a: number; b: number };
             round: number;
+            cards: TabooCard[];
+            factionACells: number;
+            factionBCells: number;
         }) => {
-            console.log('🥇 GOLDEN SHOWDOWN STARTED!');
+            console.log('🥇 GOLDEN SHOWDOWN STARTED!', data);
             setGameMode('SHOWDOWN');
-            setShowdownFinalists({ teamA: data.teamA, teamB: data.teamB });
             setShowdownPerformer(data.firstPerformer);
             setShowdownScore(data.score);
             setShowdownRound(data.round);
+            setShowdownCards(data.cards || []);
+            setShowdownCellCounts({ a: data.factionACells, b: data.factionBCells });
             setTurnPhase('WAITING');
+            setRoundStarted(false);
         });
 
         // Showdown round started with card
@@ -331,25 +418,24 @@ const BingoGame: React.FC<BingoGameProps> = ({ isAdmin }) => {
             }, 2000);
         });
 
-        // Showdown finished - declare winner
-        socket.on('showdown-finished', (data: { winnerTeamId: string }) => {
-            const winner = teams.find(t => t.id === data.winnerTeamId)
-                || showdownFinalists.teamA?.id === data.winnerTeamId
-                ? showdownFinalists.teamA
-                : showdownFinalists.teamB;
-            if (winner) setShowWinner(winner);
+        // Showdown finished - declare winner (now receives faction)
+        socket.on('showdown-finished', (data: { winnerFaction: 'A' | 'B' }) => {
+            setShowWinner(data.winnerFaction);
         });
     };
 
     const cleanupSocketListeners = () => {
         if (!socket) return;
         socket.off('bingo-grid-sync');
+        socket.off('bingo-grid-pending');
+        socket.off('bingo-grid-error');
         socket.off('bingo-cell-selected');
         socket.off('bingo-round-started');
         socket.off('bingo-buzzed');
         socket.off('bingo-correct');
         socket.off('bingo-timeout');
         socket.off('bingo-winner');
+        socket.off('bingo-turn-advanced'); // Cleanup for performer rotation
         // Showdown listeners
         socket.off('showdown-started');
         socket.off('showdown-round-started');
@@ -369,11 +455,10 @@ const BingoGame: React.FC<BingoGameProps> = ({ isAdmin }) => {
             cellIndex,
             isMyTurn,
             turnPhase,
-            activeTeamId: activeTeam?.id,
+            currentTurnFaction,
+            myFaction,
             currentTeamId,
-            currentTurnTeamIndex,
-            teamsCount: teams.length,
-            teams: teams.map(t => ({ id: t.id, name: t.realName }))
+            teamsCount: teams.length
         }));
 
         if (!isMyTurn || turnPhase !== 'SELECTING') {
@@ -439,7 +524,7 @@ const BingoGame: React.FC<BingoGameProps> = ({ isAdmin }) => {
         console.log('✅ handleCorrect called:', {
             isAdmin,
             activeCell,
-            activeTeamId: activeTeam?.id,
+            currentTurnFaction,
             turnPhase
         });
         if (!isAdmin || !socket || !session || activeCell === null) {
@@ -450,7 +535,7 @@ const BingoGame: React.FC<BingoGameProps> = ({ isAdmin }) => {
         socket.emit('bingo-correct', {
             sessionId: session.id,
             cellIndex: activeCell,
-            teamId: activeTeam?.id
+            faction: currentTurnFaction  // Send faction instead of individual teamId
         });
     };
 
@@ -481,19 +566,30 @@ const BingoGame: React.FC<BingoGameProps> = ({ isAdmin }) => {
     };
 
     const advanceToNextTurn = () => {
+        // Reset local state
         setActiveCell(null);
         setTabooCard(null);
         setBuzzedBy(null);
         setTurnPhase('SELECTING');
-        setCurrentTurnTeamIndex(prev => (prev + 1) % teams.length);
+        setShowHint(false);
+        setRoundStarted(false);
+
+        // Tell server to advance turn and select new performer
+        if (socket && session) {
+            socket.emit('bingo-advance-turn', { sessionId: session.id });
+        } else {
+            // Fallback for local state only (shouldn't happen in normal gameplay)
+            setCurrentTurnFaction(prev => prev === 'A' ? 'B' : 'A');
+        }
     };
 
-    const checkForWinner = (teamId: string) => {
-        console.log('🏆 checkForWinner called:', { teamId, gridLength: grid.length });
+    // Check for winner using the provided grid (avoids stale closure)
+    const checkForWinnerWithGrid = (currentGrid: BingoCell[], teamId: string) => {
+        console.log('🏆 checkForWinnerWithGrid called:', { teamId, gridLength: currentGrid.length });
 
         // Make sure grid is initialized
-        if (grid.length !== 9) {
-            console.log('⚠️ Grid not ready yet:', grid.length);
+        if (currentGrid.length !== 9) {
+            console.log('⚠️ Grid not ready yet:', currentGrid.length);
             return;
         }
 
@@ -505,53 +601,67 @@ const BingoGame: React.FC<BingoGameProps> = ({ isAdmin }) => {
         ];
 
         for (const line of lines) {
-            const cells = line.map(i => grid[i]);
+            const cells = line.map(i => currentGrid[i]);
             // Add null check
             if (cells.some(c => !c)) {
                 console.log('⚠️ Some cells undefined in line:', line);
                 continue;
             }
+            // Check if all cells in line are won by the same faction
             if (cells.every(c => c?.status === 'won' && c?.wonByTeamId === teamId)) {
-                const winner = teams.find(t => t.id === teamId);
-                if (winner) {
-                    setShowWinner(winner);
-                    if (socket && session) {
-                        socket.emit('bingo-winner', { sessionId: session.id, teamId });
-                    }
+                console.log('🏆 BINGO! Faction', teamId, 'wins with line:', line);
+                setShowWinner(teamId as 'A' | 'B');
+                if (socket && session) {
+                    socket.emit('bingo-winner', { sessionId: session.id, faction: teamId });
                 }
                 return;
             }
         }
 
-        // Check if grid is full - trigger showdown if tied
-        const filledCells = grid.filter(c => c.status === 'won' || c.status === 'locked').length;
+        // Check if grid is full - trigger showdown or declare winner
+        const wonCells = currentGrid.filter(c => c.status === 'won').length;
+        const lockedCells = currentGrid.filter(c => c.status === 'locked').length;
+        const filledCells = wonCells + lockedCells;
+
+        console.log('🔍 Grid status:', { wonCells, lockedCells, filledCells });
+
         if (filledCells === 9) {
-            // Count cells per team
-            const teamCounts = teams.map(team => ({
-                team,
-                count: grid.filter(c => c.status === 'won' && c.wonByTeamId === team.id).length
-            })).sort((a, b) => b.count - a.count);
+            // Count cells per faction (A vs B)
+            const factionACells = currentGrid.filter(c => c.status === 'won' && c.wonByTeamId === 'A').length;
+            const factionBCells = currentGrid.filter(c => c.status === 'won' && c.wonByTeamId === 'B').length;
+            const difference = Math.abs(factionACells - factionBCells);
 
-            const topCount = teamCounts[0]?.count || 0;
-            const secondCount = teamCounts[1]?.count || 0;
+            console.log('🏁 Grid full! Faction A:', factionACells, 'Faction B:', factionBCells, 'Difference:', difference);
 
-            // If top 2 teams are tied, start Golden Showdown!
-            if (topCount === secondCount && topCount > 0 && teamCounts.length >= 2) {
-                console.log('⚖️ TIE! Starting Golden Showdown...');
+            // Start Golden Showdown if tied OR only 1 point difference!
+            if (difference <= 1 && (factionACells > 0 || factionBCells > 0)) {
+                console.log('⚖️ CLOSE GAME! Starting Golden Showdown...');
+                setGameMode('SHOWDOWN');
                 if (socket && session) {
                     socket.emit('showdown-start', {
                         sessionId: session.id,
-                        teamAId: teamCounts[0].team.id,
-                        teamBId: teamCounts[1].team.id
+                        factionA: 'A',
+                        factionB: 'B',
+                        factionACells,
+                        factionBCells
                     });
                 }
                 return;
             }
 
-            // Otherwise, declare winner (team with most cells)
-            const winner = teamCounts[0]?.team;
-            if (winner) setShowWinner(winner);
+            // Only declare outright winner if difference is 2+ cells
+            const winnerFaction = factionACells > factionBCells ? 'A' : 'B';
+            console.log('🏆 Grid full - Clear winner by cell count:', winnerFaction, '(difference:', difference, ')');
+            setShowWinner(winnerFaction);
+            if (socket && session) {
+                socket.emit('bingo-winner', { sessionId: session.id, faction: winnerFaction });
+            }
         }
+    };
+
+    // Keep old function signature for backwards compatibility
+    const checkForWinner = (teamId: string) => {
+        checkForWinnerWithGrid(grid, teamId);
     };
 
     const getCategoryName = (categoryId: string): string => {
@@ -575,9 +685,10 @@ const BingoGame: React.FC<BingoGameProps> = ({ isAdmin }) => {
 
     // ========== GOLDEN SHOWDOWN MODE ==========
     if (gameMode === 'SHOWDOWN') {
-        const performerTeam = showdownPerformer === 'A' ? showdownFinalists.teamA : showdownFinalists.teamB;
-        const defenderTeam = showdownPerformer === 'A' ? showdownFinalists.teamB : showdownFinalists.teamA;
-        const isMyShowdownTurn = performerTeam?.id === currentTeamId;
+        const performerFaction = showdownPerformer;
+        const defenderFaction = showdownPerformer === 'A' ? 'B' : 'A';
+        // Check if current player's faction is the performer
+        const isMyShowdownTurn = myFaction === performerFaction;
 
         return (
             <div className="max-w-3xl mx-auto px-4 py-6 text-center">
@@ -586,53 +697,60 @@ const BingoGame: React.FC<BingoGameProps> = ({ isAdmin }) => {
                     <h2 className="text-4xl font-titan text-yellow-400 neon-glow animate-pulse">
                         ⚔️ GOLDEN SHOWDOWN ⚔️
                     </h2>
-                    <p className="text-lg text-white/60 mt-2">Best of 3 - Erster mit 2 Punkten gewinnt!</p>
+                    <p className="text-lg text-white/60 mt-2">
+                        {language === 'de' ? 'Best of 3 - Erster mit 2 Punkten gewinnt!' : 'Best of 3 - İlk 2 puan alan kazanır!'}
+                    </p>
+                    <p className="text-sm text-yellow-400/60 mt-1">
+                        🏁 Grid: Team Rot {showdownCellCounts.a} - {showdownCellCounts.b} Team Blau
+                    </p>
                 </div>
 
-                {/* Scoreboard */}
+                {/* Scoreboard - Factions */}
                 <div className="flex justify-center items-center gap-8 mb-8">
-                    <div className={`glass p-4 rounded-2xl min-w-[150px] ${showdownPerformer === 'A' ? 'ring-2 ring-yellow-400' : ''}`}>
-                        {showdownFinalists.teamA?.avatar ? (
-                            <img src={showdownFinalists.teamA.avatar} alt="" className="w-16 h-16 rounded-full mx-auto mb-2" />
-                        ) : (
-                            <div className="w-16 h-16 rounded-full bg-gradient-to-br from-pink-500 to-orange-500 flex items-center justify-center text-2xl font-titan mx-auto mb-2">
-                                {showdownFinalists.teamA?.secretName?.[0]}
-                            </div>
-                        )}
-                        <p className="text-cyan-400 font-bold">{showdownFinalists.teamA?.realName}</p>
+                    <div className={`glass p-4 rounded-2xl min-w-[150px] ${performerFaction === 'A' ? 'ring-2 ring-yellow-400' : ''}`}>
+                        <div className="w-16 h-16 rounded-full bg-gradient-to-br from-red-500 to-red-700 flex items-center justify-center text-2xl font-titan mx-auto mb-2">
+                            🔴
+                        </div>
+                        <p className="text-red-400 font-bold">{language === 'de' ? 'Team Rot' : 'Kırmızı'}</p>
                         <p className="text-5xl font-titan text-yellow-400">{showdownScore.a}</p>
                     </div>
 
                     <div className="text-4xl font-titan text-white/40">VS</div>
 
-                    <div className={`glass p-4 rounded-2xl min-w-[150px] ${showdownPerformer === 'B' ? 'ring-2 ring-yellow-400' : ''}`}>
-                        {showdownFinalists.teamB?.avatar ? (
-                            <img src={showdownFinalists.teamB.avatar} alt="" className="w-16 h-16 rounded-full mx-auto mb-2" />
-                        ) : (
-                            <div className="w-16 h-16 rounded-full bg-gradient-to-br from-cyan-500 to-blue-500 flex items-center justify-center text-2xl font-titan mx-auto mb-2">
-                                {showdownFinalists.teamB?.secretName?.[0]}
-                            </div>
-                        )}
-                        <p className="text-cyan-400 font-bold">{showdownFinalists.teamB?.realName}</p>
+                    <div className={`glass p-4 rounded-2xl min-w-[150px] ${performerFaction === 'B' ? 'ring-2 ring-yellow-400' : ''}`}>
+                        <div className="w-16 h-16 rounded-full bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center text-2xl font-titan mx-auto mb-2">
+                            🔵
+                        </div>
+                        <p className="text-blue-400 font-bold">{language === 'de' ? 'Team Blau' : 'Mavi'}</p>
                         <p className="text-5xl font-titan text-yellow-400">{showdownScore.b}</p>
                     </div>
                 </div>
 
                 {/* 3 Golden Cards */}
                 <div className="flex justify-center gap-4 mb-8">
-                    {[1, 2, 3].map(cardNum => (
-                        <div
-                            key={cardNum}
-                            className={`w-24 h-32 rounded-xl flex items-center justify-center text-3xl font-titan ${cardNum < showdownRound
-                                ? 'bg-gray-600/50 text-gray-500'
-                                : cardNum === showdownRound
-                                    ? 'bg-gradient-to-br from-yellow-400 to-orange-500 text-black animate-pulse shadow-lg shadow-yellow-500/50'
-                                    : 'bg-gradient-to-br from-yellow-600 to-yellow-800 text-yellow-200'
-                                }`}
-                        >
-                            {cardNum}
-                        </div>
-                    ))}
+                    {[1, 2, 3].map(cardNum => {
+                        const card = showdownCards[cardNum - 1];
+                        const isCompleted = cardNum < showdownRound;
+                        const isActive = cardNum === showdownRound;
+                        return (
+                            <div
+                                key={cardNum}
+                                className={`w-24 h-32 rounded-xl flex flex-col items-center justify-center text-3xl font-titan ${isCompleted
+                                    ? 'bg-gray-600/50 text-gray-500'
+                                    : isActive
+                                        ? 'bg-gradient-to-br from-yellow-400 to-orange-500 text-black animate-pulse shadow-lg shadow-yellow-500/50'
+                                        : 'bg-gradient-to-br from-yellow-600 to-yellow-800 text-yellow-200'
+                                    }`}
+                            >
+                                {cardNum}
+                                {card && (
+                                    <span className="text-sm mt-1">
+                                        {card.type === 'PANTOMIME' ? '🎭' : card.type === 'DRAW' ? '🎨' : '🗣️'}
+                                    </span>
+                                )}
+                            </div>
+                        );
+                    })}
                 </div>
 
                 {/* Timer */}
@@ -644,12 +762,15 @@ const BingoGame: React.FC<BingoGameProps> = ({ isAdmin }) => {
 
                 {/* Current Performer */}
                 <div className="glass rounded-2xl p-4 mb-6">
-                    <p className="text-white/60">Runde {showdownRound}/3</p>
+                    <p className="text-white/60">{language === 'de' ? 'Runde' : 'Tur'} {showdownRound || 1}/3</p>
                     <p className="text-xl text-yellow-400 font-bold">
-                        🎭 {performerTeam?.realName} führt durch
+                        🎭 {performerFaction === 'A'
+                            ? (language === 'de' ? 'Team Rot' : 'Kırmızı Takım')
+                            : (language === 'de' ? 'Team Blau' : 'Mavi Takım')
+                        } {language === 'de' ? 'führt durch' : 'oynuyor'}
                     </p>
                     {isMyShowdownTurn && (
-                        <p className="text-green-400 mt-2">➡️ DU bist dran!</p>
+                        <p className="text-green-400 mt-2">➡️ {language === 'de' ? 'DEIN TEAM ist dran!' : 'SİZİN TAKIM!'}</p>
                     )}
                 </div>
 
@@ -706,26 +827,30 @@ const BingoGame: React.FC<BingoGameProps> = ({ isAdmin }) => {
                 {/* Host Controls */}
                 {isAdmin && (
                     <div className="flex flex-wrap justify-center gap-4">
-                        {turnPhase === 'WAITING' && showdownRound < 3 && (
+                        {turnPhase === 'WAITING' && showdownRound < 3 && showdownCards.length > 0 && (
                             <button
                                 onClick={() => {
-                                    const card: TabooCard = {
-                                        term: `Showdown Begriff ${showdownRound + 1}`,
-                                        forbiddenWords: ['Wort1', 'Wort2', 'Wort3'],
-                                        type: ['PANTOMIME', 'DRAW'][Math.floor(Math.random() * 2)],
-                                        category: 'showdown'
-                                    };
-                                    const nextPerformer = showdownRound % 2 === 0 ? 'B' : 'A';
+                                    const nextRound = showdownRound + 1;
+                                    const card = showdownCards[nextRound - 1]; // Get the correct card for this round
+                                    if (!card) return;
+
+                                    // Alternate performer: Round 1 = firstPerformer, Round 2 = other, Round 3 = random
+                                    const nextPerformer: 'A' | 'B' = nextRound === 1
+                                        ? showdownPerformer
+                                        : nextRound === 2
+                                            ? (showdownPerformer === 'A' ? 'B' : 'A')
+                                            : (Math.random() > 0.5 ? 'A' : 'B');
+
                                     socket?.emit('showdown-round-start', {
                                         sessionId: session?.id,
-                                        round: showdownRound + 1,
+                                        round: nextRound,
                                         card,
                                         performer: nextPerformer
                                     });
                                 }}
                                 className="px-8 py-4 bg-yellow-500 hover:bg-yellow-400 text-black font-titan text-xl rounded-full"
                             >
-                                ▶ Runde {showdownRound + 1} starten
+                                ▶ {language === 'de' ? 'Runde' : 'Tur'} {showdownRound + 1} {language === 'de' ? 'starten' : 'başlat'}
                             </button>
                         )}
 
@@ -744,14 +869,14 @@ const BingoGame: React.FC<BingoGameProps> = ({ isAdmin }) => {
                                             b: showdownPerformer === 'B' ? showdownScore.b + 1 : showdownScore.b
                                         };
                                         if (newScore.a >= 2) {
-                                            socket?.emit('showdown-winner', { sessionId: session?.id, teamId: showdownFinalists.teamA?.id });
+                                            socket?.emit('showdown-winner', { sessionId: session?.id, faction: 'A' });
                                         } else if (newScore.b >= 2) {
-                                            socket?.emit('showdown-winner', { sessionId: session?.id, teamId: showdownFinalists.teamB?.id });
+                                            socket?.emit('showdown-winner', { sessionId: session?.id, faction: 'B' });
                                         }
                                     }}
                                     className="px-8 py-4 bg-green-500 hover:bg-green-400 text-white font-titan text-xl rounded-full"
                                 >
-                                    ✓ RICHTIG!
+                                    ✓ {language === 'de' ? 'RICHTIG!' : 'DOĞRU!'}
                                 </button>
                                 <button
                                     onClick={() => {
@@ -767,14 +892,14 @@ const BingoGame: React.FC<BingoGameProps> = ({ isAdmin }) => {
                                             b: opponent === 'B' ? showdownScore.b + 1 : showdownScore.b
                                         };
                                         if (newScore.a >= 2) {
-                                            socket?.emit('showdown-winner', { sessionId: session?.id, teamId: showdownFinalists.teamA?.id });
+                                            socket?.emit('showdown-winner', { sessionId: session?.id, faction: 'A' });
                                         } else if (newScore.b >= 2) {
-                                            socket?.emit('showdown-winner', { sessionId: session?.id, teamId: showdownFinalists.teamB?.id });
+                                            socket?.emit('showdown-winner', { sessionId: session?.id, faction: 'B' });
                                         }
                                     }}
                                     className="px-8 py-4 bg-red-500 hover:bg-red-400 text-white font-titan text-xl rounded-full"
                                 >
-                                    ✕ FALSCH!
+                                    ✕ {language === 'de' ? 'FALSCH!' : 'YANLIŞ!'}
                                 </button>
                             </>
                         )}
@@ -783,14 +908,20 @@ const BingoGame: React.FC<BingoGameProps> = ({ isAdmin }) => {
 
                 {/* Sudden Death Warning */}
                 <div className="mt-6 text-orange-400 text-sm">
-                    ⚠️ ACHTUNG: Bei Fehler geht der Punkt an den Gegner!
+                    ⚠️ {language === 'de' ? 'ACHTUNG: Bei Fehler geht der Punkt an den Gegner!' : 'DİKKAT: Hata yapılırsa puan rakibe gider!'}
                 </div>
             </div>
         );
     }
 
-    // Winner screen
+    // Winner screen - now displays faction winner
     if (showWinner) {
+        const winnerName = showWinner === 'A'
+            ? (language === 'de' ? 'Team Rot' : 'Kırmızı Takım')
+            : (language === 'de' ? 'Team Blau' : 'Mavi Takım');
+        const winnerColor = showWinner === 'A' ? 'text-red-500' : 'text-blue-500';
+        const winnerPlayers = showWinner === 'A' ? factionA : factionB;
+
         return (
             <div className="flex flex-col items-center justify-center min-h-[80vh] text-center relative">
                 <Confetti particleCount={150} duration={8000} />
@@ -798,16 +929,27 @@ const BingoGame: React.FC<BingoGameProps> = ({ isAdmin }) => {
                 <h1 className="text-5xl font-titan text-yellow-400 neon-glow mb-2">{t.winner}</h1>
                 <p className="text-2xl text-white/60 mb-6">3 in einer Reihe!</p>
 
-                <div className="glass p-8 rounded-3xl min-w-[300px]">
-                    {showWinner.avatar ? (
-                        <img src={showWinner.avatar} alt="" className="w-32 h-32 rounded-full mx-auto mb-4 border-4 border-yellow-400" />
-                    ) : (
-                        <div className="w-32 h-32 rounded-full bg-gradient-to-br from-pink-500 to-orange-500 flex items-center justify-center text-5xl font-titan mx-auto mb-4">
-                            {showWinner.secretName?.[0]}
-                        </div>
-                    )}
-                    <p className="text-2xl font-bold text-cyan-400">{showWinner.secretName}</p>
-                    <p className="text-xl text-white mt-2">= {showWinner.realName}</p>
+                <div className={`glass p-8 rounded-3xl min-w-[300px] border-4 ${showWinner === 'A' ? 'border-red-500' : 'border-blue-500'}`}>
+                    <div className={`text-6xl mb-4 ${winnerColor}`}>
+                        {showWinner === 'A' ? '🔴' : '🔵'}
+                    </div>
+                    <p className={`text-3xl font-bold ${winnerColor}`}>{winnerName}</p>
+
+                    {/* Show winning team members */}
+                    <div className="flex flex-wrap gap-2 justify-center mt-4">
+                        {winnerPlayers.map(player => (
+                            <div key={player.id} className="flex flex-col items-center">
+                                {player.avatar ? (
+                                    <img src={player.avatar} alt="" className="w-12 h-12 rounded-full" />
+                                ) : (
+                                    <div className="w-12 h-12 rounded-full bg-white/20 flex items-center justify-center font-bold">
+                                        {player.secretName?.[0]}
+                                    </div>
+                                )}
+                                <span className="text-xs text-white/60 mt-1">{player.realName}</span>
+                            </div>
+                        ))}
+                    </div>
                 </div>
 
                 {isAdmin && (
@@ -832,33 +974,65 @@ const BingoGame: React.FC<BingoGameProps> = ({ isAdmin }) => {
                 </div>
             </div>
 
-            {/* Team List Bar */}
-            <div className="glass rounded-2xl px-4 py-3 mb-4 flex flex-wrap gap-3 justify-center">
-                {teams.map((team, idx) => {
-                    const isActive = idx === currentTurnTeamIndex;
-                    const cellsWon = grid.filter(c => c.status === 'won' && c.wonByTeamId === team.id).length;
-                    return (
-                        <div
-                            key={team.id}
-                            className={`flex items-center gap-2 px-3 py-2 rounded-xl transition-all ${isActive ? 'bg-orange-500/30 ring-2 ring-orange-500' : 'bg-white/5'
-                                }`}
-                        >
-                            {team.avatar ? (
-                                <img src={team.avatar} alt="" className="w-10 h-10 rounded-full" />
-                            ) : (
-                                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-pink-500 to-orange-500 flex items-center justify-center text-lg font-bold">
-                                    {team.secretName?.[0]}
-                                </div>
-                            )}
-                            <div className="text-left">
-                                <p className="text-sm font-bold text-white">{team.realName}</p>
-                                <p className="text-xs text-cyan-400">{team.secretName}</p>
-                            </div>
-                            <span className="text-yellow-400 font-bold">{cellsWon}</span>
-                            {isActive && <span className="text-orange-400 animate-pulse">◀</span>}
+            {/* Team Factions Bar - Shows 2 teams: Red vs Blue */}
+            <div className="glass rounded-2xl px-4 py-3 mb-4 flex gap-4 justify-center">
+                {/* Team Rot (Faction A) */}
+                <div className={`flex-1 flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${currentTurnFaction === 'A'
+                    ? 'bg-red-500/30 ring-2 ring-red-500'
+                    : 'bg-white/5'
+                    }`}>
+                    <span className="text-3xl">🔴</span>
+                    <div className="flex-1">
+                        <p className={`font-bold ${currentTurnFaction === 'A' ? 'text-red-400' : 'text-white/60'}`}>
+                            {language === 'de' ? 'Team Rot' : 'Kırmızı Takım'}
+                        </p>
+                        <div className="flex -space-x-2 mt-1">
+                            {factionA.map(player => (
+                                player.avatar ? (
+                                    <img key={player.id} src={player.avatar} alt="" className="w-8 h-8 rounded-full border-2 border-red-500" />
+                                ) : (
+                                    <div key={player.id} className="w-8 h-8 rounded-full bg-red-500/50 flex items-center justify-center text-xs font-bold border-2 border-red-500">
+                                        {player.secretName?.[0]}
+                                    </div>
+                                )
+                            ))}
                         </div>
-                    );
-                })}
+                    </div>
+                    <span className="text-2xl font-bold text-yellow-400">
+                        {grid.filter(c => c.status === 'won' && c.wonByTeamId === 'A').length}
+                    </span>
+                    {currentTurnFaction === 'A' && <span className="text-red-400 animate-pulse text-xl">◀</span>}
+                </div>
+
+                <div className="text-2xl font-titan text-white/40 flex items-center">VS</div>
+
+                {/* Team Blau (Faction B) */}
+                <div className={`flex-1 flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${currentTurnFaction === 'B'
+                    ? 'bg-blue-500/30 ring-2 ring-blue-500'
+                    : 'bg-white/5'
+                    }`}>
+                    <span className="text-3xl">🔵</span>
+                    <div className="flex-1">
+                        <p className={`font-bold ${currentTurnFaction === 'B' ? 'text-blue-400' : 'text-white/60'}`}>
+                            {language === 'de' ? 'Team Blau' : 'Mavi Takım'}
+                        </p>
+                        <div className="flex -space-x-2 mt-1">
+                            {factionB.map(player => (
+                                player.avatar ? (
+                                    <img key={player.id} src={player.avatar} alt="" className="w-8 h-8 rounded-full border-2 border-blue-500" />
+                                ) : (
+                                    <div key={player.id} className="w-8 h-8 rounded-full bg-blue-500/50 flex items-center justify-center text-xs font-bold border-2 border-blue-500">
+                                        {player.secretName?.[0]}
+                                    </div>
+                                )
+                            ))}
+                        </div>
+                    </div>
+                    <span className="text-2xl font-bold text-yellow-400">
+                        {grid.filter(c => c.status === 'won' && c.wonByTeamId === 'B').length}
+                    </span>
+                    {currentTurnFaction === 'B' && <span className="text-blue-400 animate-pulse text-xl">◀</span>}
+                </div>
             </div>
 
             {/* Timer (only during PERFORMING) */}
@@ -874,11 +1048,28 @@ const BingoGame: React.FC<BingoGameProps> = ({ isAdmin }) => {
             {turnPhase === 'SELECTING' && (
                 <div className="text-center mb-4 glass rounded-2xl py-3 px-6">
                     {isMyTurn ? (
-                        <p className="text-xl text-orange-400 font-bold">{t.yourTurn}</p>
+                        <>
+                            <p className="text-xl text-orange-400 font-bold">{t.yourTurn}</p>
+                            {currentPerformer && (
+                                <p className="text-sm text-white/60 mt-1">
+                                    🎭 {currentPerformerId === currentTeamId
+                                        ? (language === 'de' ? 'DU bist der Performer!' : 'Performer SENSİN!')
+                                        : `${currentPerformer.secretName} ${language === 'de' ? 'ist Performer' : 'performer'}`
+                                    }
+                                </p>
+                            )}
+                        </>
                     ) : (
-                        <p className="text-xl text-white/60">
-                            {t.waitingFor} <span className="text-cyan-400 font-bold">{activeTeam?.secretName}</span> {t.toSelect}
-                        </p>
+                        <>
+                            <p className="text-xl text-white/60">
+                                {t.waitingFor} <span className={currentTurnFaction === 'A' ? 'text-red-400 font-bold' : 'text-blue-400 font-bold'}>{activeFactionName}</span> {t.toSelect}
+                            </p>
+                            {currentPerformer && (
+                                <p className="text-sm text-white/40 mt-1">
+                                    🎭 Performer: {currentPerformer.secretName}
+                                </p>
+                            )}
+                        </>
                     )}
                 </div>
             )}
@@ -889,19 +1080,20 @@ const BingoGame: React.FC<BingoGameProps> = ({ isAdmin }) => {
                     let cellClass = 'glass border-2 border-white/10';
                     let isSelectable = false;
 
-                    // Team colors for won cells
-                    const TEAM_COLORS = [
-                        { bg: 'bg-cyan-500/30', border: 'border-cyan-500', text: 'text-cyan-400' },
-                        { bg: 'bg-pink-500/30', border: 'border-pink-500', text: 'text-pink-400' },
-                        { bg: 'bg-yellow-500/30', border: 'border-yellow-500', text: 'text-yellow-400' },
-                        { bg: 'bg-purple-500/30', border: 'border-purple-500', text: 'text-purple-400' },
-                        { bg: 'bg-green-500/30', border: 'border-green-500', text: 'text-green-400' },
-                    ];
+                    // Faction colors for won cells (A = Red, B = Blue)
+                    const FACTION_COLORS = {
+                        'A': { bg: 'bg-red-500/30', border: 'border-red-500', text: 'text-red-400' },
+                        'B': { bg: 'bg-blue-500/30', border: 'border-blue-500', text: 'text-blue-400' },
+                    };
 
                     if (cell.status === 'won' && cell.wonByTeamId) {
-                        const teamIndex = teams.findIndex(t => t.id === cell.wonByTeamId);
-                        const colors = TEAM_COLORS[teamIndex % TEAM_COLORS.length];
-                        cellClass = `${colors.bg} border-2 ${colors.border}`;
+                        // wonByTeamId is now 'A' or 'B' (faction ID)
+                        const colors = FACTION_COLORS[cell.wonByTeamId as 'A' | 'B'];
+                        if (colors) {
+                            cellClass = `${colors.bg} border-2 ${colors.border}`;
+                        } else {
+                            cellClass = 'bg-gray-500/30 border-2 border-gray-500'; // Fallback
+                        }
                     } else if (cell.status === 'locked') {
                         cellClass = 'bg-gray-800/80 border-2 border-gray-600 opacity-60';
                     } else if (cell.status === 'active') {
@@ -981,12 +1173,49 @@ const BingoGame: React.FC<BingoGameProps> = ({ isAdmin }) => {
                             {ACTIVITY_RULES[language][tabooCard.type as keyof typeof ACTIVITY_RULES['de']]}
                         </div>
 
-                        {/* Performer View: Show term only after round started */}
+                        {/* Performer View: Show term and forbidden words */}
                         {isPerformer && (
-                            <div className="bg-white/5 rounded-2xl p-4">
-                                <span className="text-xs uppercase text-white/40 mb-1 block">{t.term}</span>
-                                <div className="text-3xl font-bold text-white">
-                                    {roundStarted ? tabooCard.term : '???'}
+                            <>
+                                <div className="bg-white/5 rounded-2xl p-4 mb-4">
+                                    <span className="text-xs uppercase text-white/40 mb-1 block">{t.term}</span>
+                                    <div className="text-3xl font-bold text-white">
+                                        {roundStarted ? tabooCard.term : '???'}
+                                    </div>
+                                </div>
+
+                                {/* Show forbidden words to performer (so they know what NOT to say) */}
+                                {roundStarted && tabooCard.type === 'EXPLAIN' && (
+                                    <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-3">
+                                        <span className="text-xs uppercase text-red-500 font-bold block mb-2">
+                                            🚫 {t.forbidden}
+                                        </span>
+                                        <div className="flex flex-wrap gap-2">
+                                            {tabooCard.forbiddenWords.map((w, i) => (
+                                                <span key={i} className="px-3 py-1 bg-red-500/20 text-red-400 rounded-full text-sm font-bold">
+                                                    {w}
+                                                </span>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+                            </>
+                        )}
+
+                        {/* Guesser View: Teammates of performer - they must guess */}
+                        {isGuesser && (
+                            <div className="bg-green-500/10 border border-green-500/30 rounded-2xl p-4">
+                                <div className="text-center">
+                                    <span className="text-5xl mb-2 block">🤔</span>
+                                    <span className="text-green-400 font-bold text-lg">
+                                        {language === 'de' ? 'DU MUSST RATEN!' : 'TAHMİN ETMEN GEREK!'}
+                                    </span>
+                                    <p className="text-white/60 text-sm mt-2">
+                                        {language === 'de'
+                                            ? `${currentPerformer?.secretName || 'Dein Teammitglied'} erklärt den Begriff`
+                                            : `${currentPerformer?.secretName || 'Takım arkadaşın'} terimi anlatıyor`
+                                        }
+                                    </p>
+                                    <div className="text-4xl font-bold text-white/30 mt-3">???</div>
                                 </div>
                             </div>
                         )}
@@ -999,7 +1228,7 @@ const BingoGame: React.FC<BingoGameProps> = ({ isAdmin }) => {
                             </div>
                         )}
 
-                        {/* Jury View: Show term AND forbidden words only after round started */}
+                        {/* Jury View: Show term AND forbidden words AFTER round starts */}
                         {(isJury || (isAdmin && !isMyTurn)) && roundStarted && (
                             <>
                                 <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-3 mb-4">
@@ -1014,7 +1243,7 @@ const BingoGame: React.FC<BingoGameProps> = ({ isAdmin }) => {
 
                                 {tabooCard.type === 'EXPLAIN' && (
                                     <div>
-                                        <span className="text-xs uppercase text-red-500 font-bold block mb-2">{t.forbidden}</span>
+                                        <span className="text-xs uppercase text-red-500 font-bold block mb-2">🚫 {t.forbidden}</span>
                                         <div className="flex flex-wrap gap-2">
                                             {tabooCard.forbiddenWords.map((w, i) => (
                                                 <span key={i} className="px-3 py-1 bg-red-500/20 text-red-400 rounded-full text-sm font-bold">

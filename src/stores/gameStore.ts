@@ -116,6 +116,15 @@ export const useGameStore = create<GameState>((set, get) => ({
             }
         });
 
+        // Listen for team updates (faction changes during Team Draft)
+        socket.on('teams-updated', ({ teams }: { teams: Team[] }) => {
+            const { session } = get();
+            if (session) {
+                console.log('📡 [gameStore] Teams updated with factions:', teams.map(t => `${t.realName}: ${t.faction}`));
+                set({ session: { ...session, teams } });
+            }
+        });
+
         socket.on('game-started', () => {
             const { session } = get();
             if (session) {
