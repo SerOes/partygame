@@ -6,7 +6,7 @@ interface AdminLobbyProps {
     onStartGame: () => void;
 }
 
-const API_URL = 'http://localhost:3001';
+const API_URL = import.meta.env.VITE_API_URL || '';
 
 const AdminLobby: React.FC<AdminLobbyProps> = ({ onStartGame }) => {
     const { session, setSession, setCurrentTeamId, hasApiKey } = useGameStore();

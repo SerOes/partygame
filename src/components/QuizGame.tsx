@@ -32,7 +32,7 @@ interface Message {
     teamName: string;
 }
 
-const API_URL = 'http://localhost:3001';
+const API_URL = import.meta.env.VITE_API_URL || '';
 const TIMER_DURATION = 60;
 const BREAK_DURATION = 180;
 

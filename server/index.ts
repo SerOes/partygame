@@ -8,6 +8,12 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { GoogleGenAI, Modality, Type } from '@google/genai';
 import * as fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+// ES Module __dirname equivalent
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // Debug log helper - writes to file for analysis
 const DEBUG_LOG_PATH = './debug-game.log';
@@ -22,7 +28,14 @@ const app = express();
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
   cors: {
-    origin: ['http://localhost:3000', 'http://localhost:3001', 'http://localhost:3002', 'http://localhost:5173'],
+    origin: [
+      'http://localhost:3000',
+      'http://localhost:3001',
+      'http://localhost:3002',
+      'http://localhost:5173',
+      'https://game.trendzone.tech',
+      'http://game.trendzone.tech'
+    ],
     methods: ['GET', 'POST'],
     credentials: true
   }
@@ -38,6 +51,14 @@ const IV_LENGTH = 16;
 
 app.use(cors({ origin: true, credentials: true }));
 app.use(express.json({ limit: '10mb' })); // Increased limit for avatar images
+
+// Serve static files from public directory
+app.use(express.static(path.join(__dirname, '..', 'public')));
+
+// Production: Serve built React app
+if (process.env.NODE_ENV === 'production') {
+  app.use(express.static(path.join(__dirname, '..', 'dist')));
+}
 
 // ==================== SEED DATA ====================
 
@@ -1955,9 +1976,16 @@ io.on('connection', (socket) => {
 
 async function start() {
   await seedDatabase();
+  // SPA catch-all - must be AFTER all API routes
+  if (process.env.NODE_ENV === 'production') {
+    app.get('*', (req, res) => {
+      res.sendFile(path.join(__dirname, '..', 'dist', 'index.html'));
+    });
+  }
 
   httpServer.listen(PORT, () => {
-    console.log(`🎉 Silvester Party Server running on http://localhost:${PORT}`);
+    console.log(`🎉 Silvester Party Server running on port ${PORT}`);
+    console.log(`   Environment: ${process.env.NODE_ENV || 'development'}`);
   });
 }
 

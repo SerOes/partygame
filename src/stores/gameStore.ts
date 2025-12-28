@@ -76,7 +76,7 @@ interface GameState {
     reset: () => void;
 }
 
-const API_URL = 'http://localhost:3001';
+const API_URL = import.meta.env.VITE_API_URL || '';
 
 export const useGameStore = create<GameState>((set, get) => ({
     socket: null,

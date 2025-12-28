@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { api, useGameStore } from '../stores/gameStore';
 
-const API_URL = 'http://localhost:3001';
+const API_URL = import.meta.env.VITE_API_URL || '';
 
 // TTS Toggle Component
 const TTSToggle: React.FC = () => {
