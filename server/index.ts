@@ -328,87 +328,127 @@ app.post('/api/sessions/:joinCode/join', async (req, res) => {
       ? availableNames[Math.floor(Math.random() * availableNames.length)]
       : `Misafir ${session.teams.length + 1}`;
 
+    // 🥚 Easter Eggs - Special secret names for specific players
+    const realNameLower = realName.toLowerCase().trim();
+    if (realNameLower === 'fırat' || realNameLower === 'firat') {
+      secretName = 'Recep Tayyip Erdoğan';
+      console.log('🥚 Easter Egg activated: Firat → Recep Tayyip Erdoğan');
+    } else if (realNameLower === 'fatih') {
+      secretName = 'Fatih Terim';
+      console.log('🥚 Easter Egg activated: Fatih → Fatih Terim');
+    }
+
     let avatar = null;
 
-    try {
-      const ai = await getGeminiClient();
+    // 🥚 Special fixed avatar for Recep Tayyip Erdoğan Easter egg
+    if (secretName === 'Recep Tayyip Erdoğan') {
+      try {
+        const fs = await import('fs');
+        const path = await import('path');
+        const avatarPath = path.join(process.cwd(), 'public', 'images', 'avatar', 'reci.png');
+        const avatarBuffer = fs.readFileSync(avatarPath);
+        avatar = `data:image/png;base64,${avatarBuffer.toString('base64')}`;
+        console.log('🥚 Using fixed Erdoğan avatar from reci.png');
+      } catch (avatarErr) {
+        console.error('Failed to load reci.png avatar:', avatarErr);
+      }
+    }
 
-      // Celebrity profiles for caricature generation (without using actual names)
-      // Maps secret names to their profession/traits for funny caricatures
-      const celebrityProfiles: Record<string, { gender: string; profession: string; funTrait: string }> = {
-        'Sibel Can': { gender: 'female', profession: 'pop diva singer', funTrait: 'dramatic hand gestures and sparkly dress' },
-        'Tarkan': { gender: 'male', profession: 'pop star singer', funTrait: 'dramatic hair flip and leather jacket' },
-        'Müjde Ar': { gender: 'female', profession: 'glamorous actress', funTrait: 'vintage Hollywood style with fur coat' },
-        'Kemal Sunal': { gender: 'male', profession: 'comedy actor', funTrait: 'confused expression with messy hair' },
-        'Barış Manço': { gender: 'male', profession: 'rock musician', funTrait: 'long mustache and colorful vest' },
-        'Sezen Aksu': { gender: 'female', profession: 'legendary singer', funTrait: 'elegant pose with microphone' },
-        'Ajda Pekkan': { gender: 'female', profession: 'superstar diva', funTrait: 'blonde hair and glamorous sunglasses' },
-        'Cem Yılmaz': { gender: 'male', profession: 'stand-up comedian', funTrait: 'expressive face telling a joke' },
-        'Neşet Ertaş': { gender: 'male', profession: 'folk musician', funTrait: 'playing traditional instrument with hat' },
-        'Zeki Müren': { gender: 'male', profession: 'flamboyant singer', funTrait: 'colorful costume with big jewelry' },
-        'Bülent Ersoy': { gender: 'female', profession: 'dramatic diva singer', funTrait: 'extravagant gown and big hair' },
-        'İbrahim Tatlıses': { gender: 'male', profession: 'arabesk singer', funTrait: 'mustache and emotional expression' },
-        'Hülya Avşar': { gender: 'female', profession: 'TV personality', funTrait: 'confident pose with blonde hair' },
-        'Adile Naşit': { gender: 'female', profession: 'comedy actress', funTrait: 'motherly expression with apron' },
-        'Münir Özkul': { gender: 'male', profession: 'theater actor', funTrait: 'wise old man with glasses' },
-        'Orhan Gencebay': { gender: 'male', profession: 'arabesk musician', funTrait: 'playing saz with emotional face' },
-        // Male singers & actors
-        'Müslüm Gürses': { gender: 'male', profession: 'arabesk legend singer', funTrait: 'emotional tear-streaked face and microphone' },
-        'Şahan Gökbakar': { gender: 'male', profession: 'comedy actor', funTrait: 'funny grimace and wacky pose' },
-        'Özcan Deniz': { gender: 'male', profession: 'pop singer and actor', funTrait: 'romantic pose with rose' },
-        'Serdar Ortaç': { gender: 'male', profession: 'pop singer', funTrait: 'energetic dance pose with sequins' },
-        'Yılmaz Erdoğan': { gender: 'male', profession: 'director and comedian', funTrait: 'thoughtful expression with film camera' },
-        'Şener Şen': { gender: 'male', profession: 'legendary actor', funTrait: 'wise expression with newspaper' },
-        'Kenan İmirzalıoğlu': { gender: 'male', profession: 'TV drama star', funTrait: 'intense mysterious gaze' },
-        'Kıvanç Tatlıtuğ': { gender: 'male', profession: 'heartthrob actor', funTrait: 'charming smile with styled hair' },
-        'Cüneyt Arkın': { gender: 'male', profession: 'action movie star', funTrait: 'martial arts pose with cape' },
-        // Politicians
-        'Recep Tayyip Erdoğan': { gender: 'male', profession: 'statesman politician', funTrait: 'confident podium pose with suit' },
-        'Ekrem İmamoğlu': { gender: 'male', profession: 'mayor politician', funTrait: 'friendly wave with big smile' },
-        // Sports
-        'Fatih Terim': { gender: 'male', profession: 'legendary football coach', funTrait: 'intense sideline pose with suit and whistle' },
-        'Arda Turan': { gender: 'male', profession: 'football player', funTrait: 'celebration pose with jersey' },
-        'Hakan Şükür': { gender: 'male', profession: 'football legend', funTrait: 'goal celebration with raised arms' },
-        // Female singers
-        'Kibariye': { gender: 'female', profession: 'folk singer', funTrait: 'joyful dancing with colorful traditional dress' },
-        'Demet Akalın': { gender: 'female', profession: 'pop diva', funTrait: 'glamorous pose with blonde hair' },
-        'Hande Yener': { gender: 'female', profession: 'pop star', funTrait: 'edgy modern look with fashion outfit' },
-        // Famous Turkish actresses
-        'Türkan Şoray': { gender: 'female', profession: 'legendary cinema actress', funTrait: 'classic movie star pose with headscarf' },
-        'Hülya Koçyiğit': { gender: 'female', profession: 'cinema legend', funTrait: 'elegant vintage style with pearls' },
-        'Fatma Girik': { gender: 'female', profession: 'classic actress', funTrait: 'strong feminine pose with determination' },
-        'Filiz Akın': { gender: 'female', profession: 'golden age actress', funTrait: 'glamorous 60s style with beehive hair' },
-        // Additional female celebrities
-        'Fahriye Evcen': { gender: 'female', profession: 'glamorous actress', funTrait: 'elegant beauty with flowing hair' },
-        'Bergüzar Korel': { gender: 'female', profession: 'drama actress', funTrait: 'intense dramatic expression' },
-        'Tuba Büyüküstün': { gender: 'female', profession: 'TV star actress', funTrait: 'sophisticated and elegant pose' },
-        'Demet Akbağ': { gender: 'female', profession: 'comedy actress', funTrait: 'funny expressive face' },
-        'Yıldız Tilbe': { gender: 'female', profession: 'pop singer', funTrait: 'colorful outfit with guitar' },
-        'Ebru Gündeş': { gender: 'female', profession: 'pop diva', funTrait: 'glamorous stage outfit' },
-        'Hadise': { gender: 'female', profession: 'pop star', funTrait: 'dancing pose with modern style' },
-        'Gülben Ergen': { gender: 'female', profession: 'pop singer', funTrait: 'energetic performance pose' },
-        'Nurgül Yeşilçay': { gender: 'female', profession: 'drama actress', funTrait: 'elegant sophisticated look' },
-        'Beren Saat': { gender: 'female', profession: 'TV actress', funTrait: 'intense dramatic gaze' },
-        // Folk musicians
-        'Aşık Mahzuni Şerif': { gender: 'male', profession: 'folk poet musician', funTrait: 'playing saz with wise beard' },
-      };
+    // 🥚 Special fixed avatar for Fatih Terim Easter egg
+    if (secretName === 'Fatih Terim') {
+      try {
+        const fs = await import('fs');
+        const path = await import('path');
+        const avatarPath = path.join(process.cwd(), 'public', 'images', 'avatar', 'fatih.png');
+        const avatarBuffer = fs.readFileSync(avatarPath);
+        avatar = `data:image/png;base64,${avatarBuffer.toString('base64')}`;
+        console.log('🥚 Using fixed Fatih Terim avatar from fatih.png');
+      } catch (avatarErr) {
+        console.error('Failed to load fatih.png avatar:', avatarErr);
+      }
+    }
 
-      // Get profile or create generic one based on name
-      // Turkish female names often end in: a, e, i (Ayşe, Fatma, Sibel, etc.)
-      // Male names often end in: n, r, t, k, l (Tarkan, Orhan, Kemal, etc.)
-      const femaleEndings = ['a', 'e', 'i', 'ü', 'ı'];
-      const isFemale = femaleEndings.some(ending => secretName.toLowerCase().endsWith(ending));
+    // Only generate AI avatar if we don't have a fixed one
+    if (!avatar) {
+      try {
+        const ai = await getGeminiClient();
 
-      const profile = celebrityProfiles[secretName] || {
-        gender: isFemale ? 'female' : 'male',
-        profession: 'entertainer',
-        funTrait: 'party hat and confetti'
-      };
+        // Celebrity profiles for caricature generation (without using actual names)
+        // Maps secret names to their profession/traits for funny caricatures
+        const celebrityProfiles: Record<string, { gender: string; profession: string; funTrait: string }> = {
+          'Sibel Can': { gender: 'female', profession: 'pop diva singer', funTrait: 'dramatic hand gestures and sparkly dress' },
+          'Tarkan': { gender: 'male', profession: 'pop star singer', funTrait: 'dramatic hair flip and leather jacket' },
+          'Müjde Ar': { gender: 'female', profession: 'glamorous actress', funTrait: 'vintage Hollywood style with fur coat' },
+          'Kemal Sunal': { gender: 'male', profession: 'comedy actor', funTrait: 'confused expression with messy hair' },
+          'Barış Manço': { gender: 'male', profession: 'rock musician', funTrait: 'long mustache and colorful vest' },
+          'Sezen Aksu': { gender: 'female', profession: 'legendary singer', funTrait: 'elegant pose with microphone' },
+          'Ajda Pekkan': { gender: 'female', profession: 'superstar diva', funTrait: 'blonde hair and glamorous sunglasses' },
+          'Cem Yılmaz': { gender: 'male', profession: 'stand-up comedian', funTrait: 'expressive face telling a joke' },
+          'Neşet Ertaş': { gender: 'male', profession: 'folk musician', funTrait: 'playing traditional instrument with hat' },
+          'Zeki Müren': { gender: 'male', profession: 'flamboyant singer', funTrait: 'colorful costume with big jewelry' },
+          'Bülent Ersoy': { gender: 'female', profession: 'dramatic diva singer', funTrait: 'extravagant gown and big hair' },
+          'İbrahim Tatlıses': { gender: 'male', profession: 'arabesk singer', funTrait: 'mustache and emotional expression' },
+          'Hülya Avşar': { gender: 'female', profession: 'TV personality', funTrait: 'confident pose with blonde hair' },
+          'Adile Naşit': { gender: 'female', profession: 'comedy actress', funTrait: 'motherly expression with apron' },
+          'Münir Özkul': { gender: 'male', profession: 'theater actor', funTrait: 'wise old man with glasses' },
+          'Orhan Gencebay': { gender: 'male', profession: 'arabesk musician', funTrait: 'playing saz with emotional face' },
+          // Male singers & actors
+          'Müslüm Gürses': { gender: 'male', profession: 'arabesk legend singer', funTrait: 'emotional tear-streaked face and microphone' },
+          'Şahan Gökbakar': { gender: 'male', profession: 'comedy actor', funTrait: 'funny grimace and wacky pose' },
+          'Özcan Deniz': { gender: 'male', profession: 'pop singer and actor', funTrait: 'romantic pose with rose' },
+          'Serdar Ortaç': { gender: 'male', profession: 'pop singer', funTrait: 'energetic dance pose with sequins' },
+          'Yılmaz Erdoğan': { gender: 'male', profession: 'director and comedian', funTrait: 'thoughtful expression with film camera' },
+          'Şener Şen': { gender: 'male', profession: 'legendary actor', funTrait: 'wise expression with newspaper' },
+          'Kenan İmirzalıoğlu': { gender: 'male', profession: 'TV drama star', funTrait: 'intense mysterious gaze' },
+          'Kıvanç Tatlıtuğ': { gender: 'male', profession: 'heartthrob actor', funTrait: 'charming smile with styled hair' },
+          'Cüneyt Arkın': { gender: 'male', profession: 'action movie star', funTrait: 'martial arts pose with cape' },
+          // Politicians
+          'Recep Tayyip Erdoğan': { gender: 'male', profession: 'statesman politician', funTrait: 'confident podium pose with suit' },
+          'Ekrem İmamoğlu': { gender: 'male', profession: 'mayor politician', funTrait: 'friendly wave with big smile' },
+          // Sports
+          'Fatih Terim': { gender: 'male', profession: 'legendary football coach', funTrait: 'intense sideline pose with suit and whistle' },
+          'Arda Turan': { gender: 'male', profession: 'football player', funTrait: 'celebration pose with jersey' },
+          'Hakan Şükür': { gender: 'male', profession: 'football legend', funTrait: 'goal celebration with raised arms' },
+          // Female singers
+          'Kibariye': { gender: 'female', profession: 'folk singer', funTrait: 'joyful dancing with colorful traditional dress' },
+          'Demet Akalın': { gender: 'female', profession: 'pop diva', funTrait: 'glamorous pose with blonde hair' },
+          'Hande Yener': { gender: 'female', profession: 'pop star', funTrait: 'edgy modern look with fashion outfit' },
+          // Famous Turkish actresses
+          'Türkan Şoray': { gender: 'female', profession: 'legendary cinema actress', funTrait: 'classic movie star pose with headscarf' },
+          'Hülya Koçyiğit': { gender: 'female', profession: 'cinema legend', funTrait: 'elegant vintage style with pearls' },
+          'Fatma Girik': { gender: 'female', profession: 'classic actress', funTrait: 'strong feminine pose with determination' },
+          'Filiz Akın': { gender: 'female', profession: 'golden age actress', funTrait: 'glamorous 60s style with beehive hair' },
+          // Additional female celebrities
+          'Fahriye Evcen': { gender: 'female', profession: 'glamorous actress', funTrait: 'elegant beauty with flowing hair' },
+          'Bergüzar Korel': { gender: 'female', profession: 'drama actress', funTrait: 'intense dramatic expression' },
+          'Tuba Büyüküstün': { gender: 'female', profession: 'TV star actress', funTrait: 'sophisticated and elegant pose' },
+          'Demet Akbağ': { gender: 'female', profession: 'comedy actress', funTrait: 'funny expressive face' },
+          'Yıldız Tilbe': { gender: 'female', profession: 'pop singer', funTrait: 'colorful outfit with guitar' },
+          'Ebru Gündeş': { gender: 'female', profession: 'pop diva', funTrait: 'glamorous stage outfit' },
+          'Hadise': { gender: 'female', profession: 'pop star', funTrait: 'dancing pose with modern style' },
+          'Gülben Ergen': { gender: 'female', profession: 'pop singer', funTrait: 'energetic performance pose' },
+          'Nurgül Yeşilçay': { gender: 'female', profession: 'drama actress', funTrait: 'elegant sophisticated look' },
+          'Beren Saat': { gender: 'female', profession: 'TV actress', funTrait: 'intense dramatic gaze' },
+          // Folk musicians
+          'Aşık Mahzuni Şerif': { gender: 'male', profession: 'folk poet musician', funTrait: 'playing saz with wise beard' },
+        };
 
-      const firstLetter = secretName.charAt(0).toUpperCase();
+        // Get profile or create generic one based on name
+        // Turkish female names often end in: a, e, i (Ayşe, Fatma, Sibel, etc.)
+        // Male names often end in: n, r, t, k, l (Tarkan, Orhan, Kemal, etc.)
+        const femaleEndings = ['a', 'e', 'i', 'ü', 'ı'];
+        const isFemale = femaleEndings.some(ending => secretName.toLowerCase().endsWith(ending));
 
-      // Create funny caricature prompt based on profession
-      const avatarPrompt = `Create a hilarious cartoon caricature portrait:
+        const profile = celebrityProfiles[secretName] || {
+          gender: isFemale ? 'female' : 'male',
+          profession: 'entertainer',
+          funTrait: 'party hat and confetti'
+        };
+
+        const firstLetter = secretName.charAt(0).toUpperCase();
+
+        // Create funny caricature prompt based on profession
+        const avatarPrompt = `Create a hilarious cartoon caricature portrait:
 - Subject: A funny ${profile.gender} ${profile.profession}
 - Style: Exaggerated cartoon caricature, colorful, comedic
 - Expression: ${profile.funTrait}
@@ -418,55 +458,55 @@ app.post('/api/sessions/:joinCode/join', async (req, res) => {
 - Square format, vibrant colors, fun and silly mood
 - NO text except the letter badge, NO real person likeness`;
 
-      console.log(`🎨 Generating avatar for ${secretName}...`);
+        console.log(`🎨 Generating avatar for ${secretName}...`);
 
-      // Use simple format from Nano Banana documentation
-      const avatarResponse = await ai.models.generateContent({
-        model: 'gemini-2.5-flash-image',
-        contents: avatarPrompt,
-      });
+        // Use simple format from Nano Banana documentation
+        const avatarResponse = await ai.models.generateContent({
+          model: 'gemini-2.5-flash-image',
+          contents: avatarPrompt,
+        });
 
-      // Debug logging
-      console.log(`📦 Avatar response received for ${secretName}`);
+        // Debug logging
+        console.log(`📦 Avatar response received for ${secretName}`);
 
-      // Log full response for debugging
-      const hasResponse = !!avatarResponse;
-      const hasCandidates = !!avatarResponse?.candidates;
-      const candidatesLength = avatarResponse?.candidates?.length || 0;
-      console.log(`📦 hasResponse=${hasResponse}, hasCandidates=${hasCandidates}, candidatesLength=${candidatesLength}`);
+        // Log full response for debugging
+        const hasResponse = !!avatarResponse;
+        const hasCandidates = !!avatarResponse?.candidates;
+        const candidatesLength = avatarResponse?.candidates?.length || 0;
+        console.log(`📦 hasResponse=${hasResponse}, hasCandidates=${hasCandidates}, candidatesLength=${candidatesLength}`);
 
-      if (candidatesLength > 0) {
-        const firstCandidate = avatarResponse.candidates![0];
-        console.log(`📦 firstCandidate has content=${!!firstCandidate?.content}`);
-        console.log(`📦 content parts length=${firstCandidate?.content?.parts?.length || 0}`);
-      }
-
-      const parts = avatarResponse.candidates?.[0]?.content?.parts || [];
-      console.log(`📦 Number of parts: ${parts.length}`);
-
-      for (let i = 0; i < parts.length; i++) {
-        const part = parts[i];
-        console.log(`📦 Part ${i}: has inlineData=${!!part.inlineData}, has text=${!!part.text}`);
-        if (part.inlineData) {
-          const mimeType = part.inlineData.mimeType;
-          const dataLength = part.inlineData.data?.length || 0;
-          console.log(`📦 Part ${i}: mimeType=${mimeType}, dataLength=${dataLength}`);
-          avatar = `data:${mimeType};base64,${part.inlineData.data}`;
-          console.log(`✅ Avatar extracted for ${secretName}, length: ${avatar.length}`);
-          break;
+        if (candidatesLength > 0) {
+          const firstCandidate = avatarResponse.candidates![0];
+          console.log(`📦 firstCandidate has content=${!!firstCandidate?.content}`);
+          console.log(`📦 content parts length=${firstCandidate?.content?.parts?.length || 0}`);
         }
-      }
 
-      if (!avatar) {
-        console.log(`⚠️ No image data found in response for ${secretName}, using text model fallback`);
-        // Log what we did get
-        console.log(`📦 Full response keys:`, Object.keys(avatarResponse || {}));
-      }
-    } catch (e: any) {
-      console.error(`❌ Avatar generation error for ${secretName}:`, e.message || e);
-      // Avatar remains null, fallback will be used in UI
-    }
+        const parts = avatarResponse.candidates?.[0]?.content?.parts || [];
+        console.log(`📦 Number of parts: ${parts.length}`);
 
+        for (let i = 0; i < parts.length; i++) {
+          const part = parts[i];
+          console.log(`📦 Part ${i}: has inlineData=${!!part.inlineData}, has text=${!!part.text}`);
+          if (part.inlineData) {
+            const mimeType = part.inlineData.mimeType;
+            const dataLength = part.inlineData.data?.length || 0;
+            console.log(`📦 Part ${i}: mimeType=${mimeType}, dataLength=${dataLength}`);
+            avatar = `data:${mimeType};base64,${part.inlineData.data}`;
+            console.log(`✅ Avatar extracted for ${secretName}, length: ${avatar.length}`);
+            break;
+          }
+        }
+
+        if (!avatar) {
+          console.log(`⚠️ No image data found in response for ${secretName}, using text model fallback`);
+          // Log what we did get
+          console.log(`📦 Full response keys:`, Object.keys(avatarResponse || {}));
+        }
+      } catch (e: any) {
+        console.error(`❌ Avatar generation error for ${secretName}:`, e.message || e);
+        // Avatar remains null, fallback will be used in UI
+      }
+    } // End of if (!avatar) block
     const team = await prisma.team.create({
       data: {
         realName,
@@ -872,127 +912,155 @@ app.post('/api/regenerate-bingo-cards', async (req, res) => {
 
     // Start background generation process
     res.json({
-      message: '🎲 Bingo-Karten Generierung gestartet! Dies kann mehrere Minuten dauern.',
-      categories: BINGO_CATEGORIES.length
+      message: '🎲 Bingo-Karten Generierung gestartet! Dies kann 10-15 Minuten dauern (6000 Begriffe).',
+      categories: BINGO_CATEGORIES.length,
+      totalExpected: BINGO_CATEGORIES.length * 5 * 50 * 2 // 12 × 5 × 50 × 2 = 6000
     });
+
+    // Difficulty definitions with examples
+    const DIFFICULTY_DEFS = {
+      de: {
+        1: { name: 'SEHR LEICHT', desc: 'Kinderleicht - ein 8-jähriges Kind kennt es', examples: 'Pizza, Hund, Handy, Fußball, Weihnachten' },
+        2: { name: 'LEICHT', desc: 'Sehr bekannt - jeder Teenager kennt es', examples: 'Supermarkt, Flugzeug, Geburtstag, Joggen, Fahrrad' },
+        3: { name: 'MITTEL', desc: 'Bekannt - die meisten Erwachsenen kennen es', examples: 'Streaming-Dienst, Silvesterrakete, Yoga, Taylor Swift' },
+        4: { name: 'SCHWER', desc: 'Spezifisch - braucht etwas Wissen', examples: 'Inflation, Podcast, Fechten, Astronaut, Klimawandel' },
+        5: { name: 'SEHR SCHWER', desc: 'Anspruchsvoll - braucht Spezialwissen', examples: 'Kryptowährung, Metaverse, DNA-Doppelhelix, Quantencomputer' }
+      },
+      tr: {
+        1: { name: 'ÇOK KOLAY', desc: '8 yaşında bir çocuk bile bilir', examples: 'Pizza, Köpek, Telefon, Futbol, Uyumak' },
+        2: { name: 'KOLAY', desc: 'Her genç bilir', examples: 'Market, Uçak, Doğum günü, Koşmak, Bisiklet' },
+        3: { name: 'ORTA', desc: 'Çoğu yetişkin bilir', examples: 'Streaming platformu, Yoga, Eyfel Kulesi' },
+        4: { name: 'ZOR', desc: 'Biraz bilgi gerektirir', examples: 'Enflasyon, Podcast, Eskrim, Astronot' },
+        5: { name: 'ÇOK ZOR', desc: 'Uzmanlık bilgisi gerektirir', examples: 'Kripto para, Metaverse, Kuantum bilgisayar' }
+      }
+    };
 
     // Run generation in background
     (async () => {
       let totalCards = 0;
-      const CARDS_PER_BATCH = 25;
-      const BATCHES_PER_CATEGORY = 4; // 4 batches × 25 = ~100 cards per category per language
+      const CARDS_PER_DIFFICULTY = 50;
+      const DIFFICULTIES = [1, 2, 3, 4, 5];
 
       for (const category of BINGO_CATEGORIES) {
-        console.log(`📦 Processing: ${category.nameDE}`);
+        console.log(`\n📦 Processing: ${category.nameDE}`);
 
-        // Generate German cards
-        for (let batch = 0; batch < BATCHES_PER_CATEGORY; batch++) {
-          const promptDE = `Du bist ein Party-Spielemaster. Generiere ${CARDS_PER_BATCH} Begriffe für ein Tabu/Activity-Spiel.
-Kategorie: "${category.nameDE}"
+        for (const language of ['de', 'tr'] as const) {
+          const langFlag = language === 'de' ? '🇩🇪' : '🇹🇷';
+          const categoryName = language === 'de' ? category.nameDE : category.nameTR;
+          const defs = DIFFICULTY_DEFS[language];
 
-Für jeden Begriff:
-1. Ein bekannter, lustiger Begriff (Filmtitel, Person, Trend, etc.)
-2. 5 verbotene Wörter, die man beim Erklären NICHT benutzen darf
+          for (const difficulty of DIFFICULTIES) {
+            const def = defs[difficulty as keyof typeof defs];
+            console.log(`  ${langFlag} Stufe ${difficulty} (${def.name})...`);
 
-Mache die Begriffe aktuell (2024/2025) und lustig für eine Silvesterparty!
-Falls "Türkei Spezial": Türkische Popstars, Essen, Traditionen.
-Falls "Österreich Spezial": Österreichische Promis, Dialekt, Traditionen.
+            const prompt = language === 'de'
+              ? `Generiere ${CARDS_PER_DIFFICULTY} SPEZIFISCHE Begriffe für ein Partyspiel (Tabu/Activity-Stil).
 
-Antworte NUR mit JSON-Array:
-[
-  { "term": "Begriff", "forbiddenWords": ["verboten1", "verboten2", "verboten3", "verboten4", "verboten5"] }
-]`;
+KATEGORIE: "${categoryName}"
+SCHWIERIGKEIT: Stufe ${difficulty} - ${def.name}
 
-          try {
-            const response = await ai.models.generateContent({
-              model: 'gemini-3-flash-preview',
-              contents: promptDE
-            });
+WICHTIGSTE REGELN:
+1. Jeder Begriff MUSS eindeutig zur Kategorie "${categoryName}" gehören!
+2. KEINE generischen Begriffe wie "Eis", "Ball", "Musik" die zu mehreren Kategorien passen könnten
+3. Stufe ${difficulty} bedeutet: ${def.desc}
+4. Beispiele für Stufe ${difficulty}: ${def.examples}
 
-            const responseText = response.text || '';
-            const jsonMatch = responseText.match(/\[[\s\S]*\]/);
-            if (jsonMatch) {
-              const cards = JSON.parse(jsonMatch[0]);
-              if (Array.isArray(cards)) {
-                for (const card of cards) {
-                  if (card.term && card.forbiddenWords) {
-                    const type = ACTIVITY_TYPES[Math.floor(Math.random() * ACTIVITY_TYPES.length)];
-                    await prisma.bingoCard.create({
-                      data: {
-                        category: category.id,
-                        term: card.term,
-                        type,
-                        forbiddenWords: JSON.stringify(card.forbiddenWords),
-                        language: 'de'
-                      }
-                    });
-                    totalCards++;
-                  }
-                }
-              }
-            }
-          } catch (e: any) {
-            console.error(`Error DE batch ${batch + 1} for ${category.nameDE}:`, e.message);
-          }
+KATEGORIE-SPEZIFISCHE ANFORDERUNGEN:
+${categoryName.includes('Sport') ? '- NUR Sportarten, Sportler, Sportereignisse, Sportausrüstung (z.B. "Ronaldo", "Olympiade", "Bundesliga")' : ''}
+${categoryName.includes('Musik') ? '- NUR Musiker, Songs, Musikgenres, Instrumente (z.B. "Taylor Swift", "Gitarre", "Hip-Hop")' : ''}
+${categoryName.includes('Filme') ? '- NUR Filme, Serien, Schauspieler, Regisseure (z.B. "Barbie", "Netflix", "Tom Hanks")' : ''}
+${categoryName.includes('Essen') ? '- NUR Gerichte, Zutaten, Getränke, Restaurants (z.B. "Döner", "Sushi", "Cappuccino")' : ''}
+${categoryName.includes('Silvester') ? '- NUR Silvester-Traditionen, Neujahr, Party (z.B. "Feuerwerk", "Bleigießen", "Countdown")' : ''}
+${categoryName.includes('Österreich') ? '- NUR österreichische Promis, Orte, Kultur (z.B. "Falco", "Wiener Schnitzel", "Lipizzaner")' : ''}
+${categoryName.includes('Türkei') ? '- NUR türkische Kultur, Stars, Traditionen (z.B. "Tarkan", "Baklava", "Cappadocia")' : ''}
+${categoryName.includes('Tech') ? '- NUR Technik, Games, Apps, Gadgets (z.B. "iPhone", "Fortnite", "ChatGPT")' : ''}
+${categoryName.includes('Popkultur') ? '- NUR Memes, Internet-Trends, Social Media (z.B. "TikTok", "Influencer", "Viral")' : ''}
+${categoryName.includes('Prominente') ? '- NUR bekannte Persönlichkeiten, Stars (z.B. "Beyoncé", "Elon Musk", "Angela Merkel")' : ''}
+${categoryName.includes('Wissenschaft') ? '- NUR wissenschaftliche Begriffe, Erfindungen (z.B. "Teleskop", "Dinosaurier", "Rakete")' : ''}
+${categoryName.includes('Weltgeschehen') ? '- NUR aktuelle Ereignisse, Politik, Länder (z.B. "Klimawandel", "Wahlen", "Olympische Spiele")' : ''}
 
-          await new Promise(resolve => setTimeout(resolve, 1500));
-        }
+Für JEDEN Begriff:
+1. "term": Ein SPEZIFISCHER Begriff der EINDEUTIG zu "${categoryName}" gehört
+2. "forbiddenWords": 5 Wörter, die beim Erklären NICHT benutzt werden dürfen
+3. "hint": Ein hilfreicher Hinweis (1 kurzer Satz)
 
-        // Generate Turkish cards
-        for (let batch = 0; batch < BATCHES_PER_CATEGORY; batch++) {
-          const promptTR = `Sen bir parti oyun ustasısın. Tabu/Activity tarzında ${CARDS_PER_BATCH} terim oluştur.
-Kategori: "${category.nameTR}"
+Antworte als JSON Array.`
+              : `${CARDS_PER_DIFFICULTY} adet parti oyunu terimi oluştur (Tabu/Activity tarzında).
+KATEGORİ: "${categoryName}"
+ZORLUK: Seviye ${difficulty} - ${def.name}
+
+ÖNEMLİ - Seviye ${difficulty}: ${def.desc}
+Örnek terimler: ${def.examples}
 
 Her terim için:
-1. Bilinen, eğlenceli bir terim (film adı, kişi, trend vb.)
-2. Açıklarken KULLANILMAMASI gereken 5 yasak kelime
+1. "term": Terim (seviye ${difficulty}'e uygun!)
+2. "forbiddenWords": Açıklarken KULLANILMAMASI gereken 5 kelime
+3. "hint": Yardımcı ipucu (1 kısa cümle)
 
-Terimleri güncel (2024/2025) ve yılbaşı partisi için eğlenceli yap!
+JSON Array olarak cevap ver.`;
 
-SADECE JSON-Array olarak cevap ver:
-[
-  { "term": "Terim", "forbiddenWords": ["yasak1", "yasak2", "yasak3", "yasak4", "yasak5"] }
-]`;
+            try {
+              const response = await ai.models.generateContent({
+                model: 'gemini-3-flash-preview',
+                contents: prompt,
+                config: {
+                  responseMimeType: 'application/json'
+                }
+              });
 
-          try {
-            const response = await ai.models.generateContent({
-              model: 'gemini-3-flash-preview',
-              contents: promptTR
-            });
-
-            const responseText = response.text || '';
-            const jsonMatch = responseText.match(/\[[\s\S]*\]/);
-            if (jsonMatch) {
-              const cards = JSON.parse(jsonMatch[0]);
-              if (Array.isArray(cards)) {
-                for (const card of cards) {
-                  if (card.term && card.forbiddenWords) {
-                    const type = ACTIVITY_TYPES[Math.floor(Math.random() * ACTIVITY_TYPES.length)];
-                    await prisma.bingoCard.create({
-                      data: {
-                        category: category.id,
-                        term: card.term,
-                        type,
-                        forbiddenWords: JSON.stringify(card.forbiddenWords),
-                        language: 'tr'
-                      }
-                    });
-                    totalCards++;
+              const responseText = response.text || '';
+              const jsonMatch = responseText.match(/\[[\s\S]*\]/);
+              if (jsonMatch) {
+                const cards = JSON.parse(jsonMatch[0]);
+                if (Array.isArray(cards)) {
+                  for (const card of cards) {
+                    if (card.term && card.forbiddenWords) {
+                      const type = ACTIVITY_TYPES[Math.floor(Math.random() * ACTIVITY_TYPES.length)];
+                      await prisma.bingoCard.create({
+                        data: {
+                          category: category.id,
+                          term: card.term,
+                          type,
+                          forbiddenWords: JSON.stringify(card.forbiddenWords.slice(0, 5)),
+                          language,
+                          difficulty,
+                          hint: card.hint || ''
+                        }
+                      });
+                      totalCards++;
+                    }
                   }
                 }
               }
+              console.log(`     → Begriffe erstellt (gesamt: ${totalCards})`);
+            } catch (e: any) {
+              console.error(`Error ${language} difficulty ${difficulty} for ${categoryName}:`, e.message);
             }
-          } catch (e: any) {
-            console.error(`Error TR batch ${batch + 1} for ${category.nameTR}:`, e.message);
-          }
 
-          await new Promise(resolve => setTimeout(resolve, 1500));
+            // Rate limiting between difficulty levels
+            await new Promise(resolve => setTimeout(resolve, 2000));
+          }
         }
 
-        console.log(`✅ [${category.nameDE}] Done, total so far: ${totalCards}`);
+        console.log(`✅ [${category.nameDE}] Fertig!`);
+        // Longer pause between categories
+        await new Promise(resolve => setTimeout(resolve, 3000));
       }
 
-      console.log(`🎉 Bingo card generation complete! Total: ${totalCards} cards`);
+      console.log(`\n🎭 Regenerating pantomime terms...`);
+      // Regenerate pantomime_universal terms by running the seed script
+      try {
+        const { execSync } = await import('child_process');
+        execSync('npx tsx scripts/seed-pantomime.ts', {
+          cwd: process.cwd(),
+          stdio: 'inherit'
+        });
+        console.log('✅ Pantomime terms regenerated!');
+      } catch (err) {
+        console.error('❌ Failed to regenerate pantomime terms:', err);
+      }
+
+      console.log(`\n🎉 Bingo card generation complete! Total: ${totalCards} cards + pantomime terms`);
     })();
   } catch (error: any) {
     console.error('Bingo regeneration error:', error);
@@ -1457,7 +1525,7 @@ io.on('connection', (socket) => {
     }
   });
 
-  // Team selects a cell - fetch real card from DB
+  // Team selects a cell - fetch real card from DB (NEVER show same term twice!)
   socket.on('bingo-select-cell', async (data: {
     sessionId: string;
     cellIndex: number;
@@ -1469,38 +1537,103 @@ io.on('connection', (socket) => {
     console.log(`🎲 Bingo cell ${data.cellIndex} selected by team ${data.teamId}`);
 
     try {
-      // Fetch random card from DB matching category and type
+      // Get session to retrieve used terms
+      const session = await prisma.gameSession.findUnique({
+        where: { id: data.sessionId }
+      });
+
+      // Parse bingoState to get usedTermIds
+      let usedTermIds: string[] = [];
+      if (session?.bingoState) {
+        try {
+          const state = JSON.parse(session.bingoState);
+          usedTermIds = state.usedTermIds || [];
+        } catch (e) {
+          console.error('Failed to parse bingoState:', e);
+        }
+      }
+
+      // For PANTOMIME type, always use pantomime_universal category
+      const categoryToUse = data.type === 'PANTOMIME' ? 'pantomime_universal' : data.category;
+
+      // Fetch random card from DB matching category and type, EXCLUDING already used terms
       const cards = await prisma.bingoCard.findMany({
         where: {
-          category: data.category,
+          category: categoryToUse,
           type: data.type,
-          language: data.language
+          language: data.language,
+          // Exclude already used terms by ID
+          id: {
+            notIn: usedTermIds
+          }
         }
       });
 
       if (cards.length === 0) {
-        console.log(`⚠️ No cards found for category=${data.category}, type=${data.type}, lang=${data.language}`);
-        // Fallback card
+        console.log(`⚠️ No UNUSED cards found for category=${categoryToUse}, type=${data.type}, lang=${data.language}`);
+        // Fallback: get any card even if used (last resort)
+        const fallbackCards = await prisma.bingoCard.findMany({
+          where: {
+            category: categoryToUse,
+            type: data.type,
+            language: data.language
+          }
+        });
+
+        if (fallbackCards.length === 0) {
+          io.to(data.sessionId).emit('bingo-cell-selected', {
+            cellIndex: data.cellIndex,
+            teamId: data.teamId,
+            card: {
+              term: `Kein Begriff für ${data.category}`,
+              forbiddenWords: [],
+              type: data.type,
+              category: data.category
+            }
+          });
+          return;
+        }
+
+        // Use fallback card
+        const randomCard = fallbackCards[Math.floor(Math.random() * fallbackCards.length)];
+        const forbiddenWords = randomCard.forbiddenWords ? JSON.parse(randomCard.forbiddenWords) : [];
+        console.log(`⚠️ Using fallback card (may be repeated): "${randomCard.term}"`);
+
         io.to(data.sessionId).emit('bingo-cell-selected', {
           cellIndex: data.cellIndex,
           teamId: data.teamId,
           card: {
-            term: `Kein Begriff für ${data.category}`,
-            forbiddenWords: [],
-            type: data.type,
-            category: data.category
+            term: randomCard.term,
+            forbiddenWords,
+            type: randomCard.type,
+            category: randomCard.category,
+            hint: randomCard.hint || undefined,
+            difficulty: randomCard.difficulty || 3
           }
         });
         return;
       }
 
-      // Pick random card
+      // Pick random card from UNUSED cards
       const randomCard = cards[Math.floor(Math.random() * cards.length)];
       const forbiddenWords = randomCard.forbiddenWords
         ? JSON.parse(randomCard.forbiddenWords)
         : [];
 
-      console.log(`✅ Found card: "${randomCard.term}" with ${forbiddenWords.length} forbidden words`);
+      console.log(`✅ Found NEW card: "${randomCard.term}" with ${forbiddenWords.length} forbidden words (${usedTermIds.length} terms already used)`);
+
+      // Add this term to usedTermIds and save back to session
+      usedTermIds.push(randomCard.id);
+      const currentState = session?.bingoState ? JSON.parse(session.bingoState) : {};
+      await prisma.gameSession.update({
+        where: { id: data.sessionId },
+        data: {
+          bingoState: JSON.stringify({
+            ...currentState,
+            usedTermIds
+          })
+        }
+      });
 
       io.to(data.sessionId).emit('bingo-cell-selected', {
         cellIndex: data.cellIndex,
@@ -1682,15 +1815,23 @@ io.on('connection', (socket) => {
     console.log(`🥇 GOLDEN SHOWDOWN! Faction A (${data.factionACells || '?'} cells) vs Faction B (${data.factionBCells || '?'} cells)`);
 
     try {
-      // Fetch 3 hard difficulty cards for the showdown (prefer PANTOMIME and DRAW for fairness)
-      const showdownCards = await prisma.bingoCard.findMany({
+      // Fetch hard difficulty cards for the showdown (prefer difficulty 3+)
+      let showdownCards = await prisma.bingoCard.findMany({
         where: {
           difficulty: { gte: 3 } // Hard cards (difficulty 3+)
         },
         take: 10
       });
 
-      // Shuffle and pick 3
+      // Fallback: if no hard cards, get ANY cards
+      if (showdownCards.length < 3) {
+        console.log('⚠️ Not enough hard cards, falling back to any cards');
+        showdownCards = await prisma.bingoCard.findMany({
+          take: 10
+        });
+      }
+
+      // Shuffle and pick 3 (or less if not enough cards)
       const shuffledCards = showdownCards.sort(() => Math.random() - 0.5).slice(0, 3);
 
       // Format cards for frontend

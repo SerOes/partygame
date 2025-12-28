@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useGameStore, Team } from '../stores/gameStore';
 import Confetti from './Confetti';
+import useSound from 'use-sound';
 
 interface BingoGameProps {
     isAdmin: boolean;
@@ -41,6 +42,7 @@ interface BingoCell {
     type: 'EXPLAIN' | 'PANTOMIME' | 'DRAW';
     status: CellStatus;
     wonByTeamId?: string;
+    lockedByFaction?: 'A' | 'B'; // Which faction locked this cell (other faction can still play it)
 }
 
 interface TabooCard {
@@ -55,7 +57,7 @@ interface TabooCard {
 // Turn phases
 type TurnPhase = 'WAITING' | 'SELECTING' | 'PERFORMING' | 'RESULT';
 
-// Category data with generated Nano Banana images
+// Category data with generated Nano Banana images (Popkultur removed)
 const CATEGORIES = [
     { id: 'tuerkei', name: { de: 'Türkei Spezial', tr: 'Türkiye Özel' }, icon: '🇹🇷', image: '/images/categories/tuerkei.png' },
     { id: 'musik_hits', name: { de: 'Musik 2025', tr: 'Müzik 2025' }, icon: '🎵', image: '/images/categories/musik_hits.png' },
@@ -63,7 +65,6 @@ const CATEGORIES = [
     { id: 'sport', name: { de: 'Sport 2025', tr: 'Spor 2025' }, icon: '⚽', image: '/images/categories/sport.png' },
     { id: 'prominente', name: { de: 'Prominente', tr: 'Ünlüler' }, icon: '⭐', image: '/images/categories/prominente.png' },
     { id: 'tech_gaming', name: { de: 'Tech & Gaming', tr: 'Teknoloji & Oyunlar' }, icon: '🎮', image: '/images/categories/tech_gaming.png' },
-    { id: 'popkultur', name: { de: 'Popkultur', tr: 'Popüler Kültür' }, icon: '📱', image: '/images/categories/popkultur.png' },
     { id: 'essen_trinken', name: { de: 'Essen & Trinken', tr: 'Yemek & İçecek' }, icon: '🍕', image: '/images/categories/essen_trinken.png' },
     { id: 'silvester', name: { de: 'Silvester', tr: 'Yılbaşı' }, icon: '🎆', image: '/images/categories/silvester.png' },
     { id: 'oesterreich', name: { de: 'Österreich', tr: 'Avusturya' }, icon: '🇦🇹', image: '/images/categories/oesterreich.png' },
@@ -117,6 +118,12 @@ const BingoGame: React.FC<BingoGameProps> = ({ isAdmin }) => {
     // Check if it's my faction's turn (for cell selection)
     const isMyFactionsTurn = myFaction === currentTurnFaction;
     const isMyTurn = isMyFactionsTurn; // Alias for backwards compatibility
+
+    // ========== SOUND EFFECTS (Host Only) ==========
+    const [playBuzzerSound] = useSound('/sounds/buzzer.wav', { volume: 1.0 });
+    const [playWinSound] = useSound('/sounds/win.wav', { volume: 0.8 });
+    const [playTimerSound, { stop: stopTimerSound }] = useSound('/sounds/timer.wav', { volume: 0.6 });
+    const [playLobbyMusic, { stop: stopLobbyMusic }] = useSound('/sounds/loby-music.wav', { volume: 0.4, loop: true });
 
     // Check if game is in a state where roles matter (cell selected or performing)
     const isActiveRound = turnPhase === 'PERFORMING' || (turnPhase === 'SELECTING' && activeCell !== null);
@@ -211,18 +218,37 @@ const BingoGame: React.FC<BingoGameProps> = ({ isAdmin }) => {
             setTimer(t => {
                 // Show hint when 60 seconds remain (after first 60s of 120s round)
                 if (t === 61) setShowHint(true);
+                // Play timer sound when 10 seconds remain (host only)
+                if (t === 10 && isAdmin) playTimerSound();
                 return t - 1;
             });
         }, 1000);
         return () => clearInterval(interval);
-    }, [timerActive, timer]);
+    }, [timerActive, timer, isAdmin, playTimerSound]);
+
+    // Lobby music - play when selecting, stop when performing (Host only)
+    useEffect(() => {
+        if (!isAdmin) return;
+
+        if (turnPhase === 'SELECTING' && !activeCell && grid.length > 0) {
+            // In selection phase with no active cell - play lobby music
+            playLobbyMusic();
+        } else {
+            // Stop lobby music when performing or cell is active
+            stopLobbyMusic();
+        }
+
+        return () => stopLobbyMusic();
+    }, [turnPhase, activeCell, grid.length, isAdmin, playLobbyMusic, stopLobbyMusic]);
 
     // Handle timeout
     useEffect(() => {
         if (timer === 0 && timerActive) {
+            // Play buzzer sound when time runs out (Host only)
+            if (isAdmin) playBuzzerSound();
             handleTimeout();
         }
-    }, [timer, timerActive]);
+    }, [timer, timerActive, isAdmin, playBuzzerSound]);
 
     const initializeGrid = () => {
         const types: Array<'EXPLAIN' | 'PANTOMIME' | 'DRAW'> = ['EXPLAIN', 'PANTOMIME', 'DRAW'];
@@ -294,8 +320,9 @@ const BingoGame: React.FC<BingoGameProps> = ({ isAdmin }) => {
             }));
         });
 
-        // Round started by host
+        // Round started by host - ALL clients must receive this!
         socket.on('bingo-round-started', () => {
+            console.log('🎬 bingo-round-started received! Setting roundStarted=true');
             setTurnPhase('PERFORMING');
             setRoundStarted(true);
             setTimer(120); // 120 seconds per round
@@ -304,26 +331,31 @@ const BingoGame: React.FC<BingoGameProps> = ({ isAdmin }) => {
             setShowHint(false); // Reset hint, will show after 60 seconds
         });
 
-        // Buzzer pressed
+        // Buzzer pressed - cell returns to empty (NOT locked!)
         socket.on('bingo-buzzed', (data: { teamId: string; teamName: string }) => {
             setBuzzedBy(data.teamId);
             setTimerActive(false);
-            // Lock the cell
+            // Reset cell to empty so any team can try again with a new term
             if (activeCell !== null) {
                 setGrid(prev => prev.map((cell, i) =>
-                    i === activeCell ? { ...cell, status: 'locked' } : cell
+                    i === activeCell ? { ...cell, status: 'empty' } : cell
                 ));
             }
-            // Play buzzer sound
-            playBuzzerSound();
-            // After 2 seconds, move to next turn
-            setTimeout(() => advanceToNextTurn(), 2500);
+            // Play buzzer sound on host only
+            if (isAdmin) playBuzzerSound();
+            // After 2 seconds, move to next turn (HOST ONLY to prevent double-advance)
+            if (isAdmin) {
+                setTimeout(() => advanceToNextTurn(), 2500);
+            }
         });
 
         // Correct answer - now receives faction instead of teamId
         socket.on('bingo-correct', (data: { cellIndex: number; faction: 'A' | 'B' }) => {
             console.log('📥 bingo-correct received:', data);
             setTimerActive(false);
+            stopTimerSound(); // Stop timer sound if playing
+            // Play win sound on host only
+            if (isAdmin) playWinSound();
             setGrid(prev => {
                 const newGrid = prev.map((cell, i) =>
                     i === data.cellIndex ? { ...cell, status: 'won' as const, wonByTeamId: data.faction } : cell
@@ -333,7 +365,10 @@ const BingoGame: React.FC<BingoGameProps> = ({ isAdmin }) => {
                 setTimeout(() => checkForWinnerWithGrid(newGrid, data.faction), 100);
                 return newGrid;
             });
-            setTimeout(() => advanceToNextTurn(), 1500);
+            // IMPORTANT: Only host advances turn to prevent double-advance bug!
+            if (isAdmin) {
+                setTimeout(() => advanceToNextTurn(), 1500);
+            }
         });
 
         // Time ran out
@@ -344,15 +379,20 @@ const BingoGame: React.FC<BingoGameProps> = ({ isAdmin }) => {
                     i === activeCell ? { ...cell, status: 'empty' } : cell
                 ));
             }
-            setTimeout(() => advanceToNextTurn(), 1500);
+            // HOST ONLY to prevent double-advance
+            if (isAdmin) {
+                setTimeout(() => advanceToNextTurn(), 1500);
+            }
         });
 
         // Winner declared - now receives faction instead of teamId
         socket.on('bingo-winner', (data: { faction: 'A' | 'B' }) => {
             setShowWinner(data.faction);
+            // Play win sound on host only
+            if (isAdmin) playWinSound();
         });
 
-        // Turn advanced - new faction and performer
+        // Turn advanced - new faction and performer - ALL CLIENTS receive this!
         socket.on('bingo-turn-advanced', (data: {
             currentTurnFaction: 'A' | 'B';
             currentPerformerId: string | null;
@@ -360,10 +400,22 @@ const BingoGame: React.FC<BingoGameProps> = ({ isAdmin }) => {
             usedPerformersB: string[];
         }) => {
             console.log(`⏭️ Turn advanced: Faction ${data.currentTurnFaction}, Performer: ${data.currentPerformerId}`);
+
+            // Reset ALL state for the new turn - this affects ALL clients
             setCurrentTurnFaction(data.currentTurnFaction);
             setCurrentPerformerId(data.currentPerformerId);
             setUsedPerformersA(data.usedPerformersA);
             setUsedPerformersB(data.usedPerformersB);
+
+            // Critical: Reset turn phase so the new team can select!
+            setTurnPhase('SELECTING');
+            setTimerActive(false);
+            setTimer(120);
+            setActiveCell(null);
+            setTabooCard(null);
+            setBuzzedBy(null);
+            setShowHint(false);
+            setRoundStarted(false);
         });
 
         // ========== GOLDEN SHOWDOWN LISTENERS ==========
@@ -443,11 +495,6 @@ const BingoGame: React.FC<BingoGameProps> = ({ isAdmin }) => {
         socket.off('showdown-finished');
     };
 
-    const playBuzzerSound = () => {
-        // TODO: Play "MÖÖÖP" sound
-        if (navigator.vibrate) navigator.vibrate([300, 100, 300, 100, 300]);
-    };
-
     const handleCellSelect = async (cellIndex: number) => {
         // Send debug info to server for logging
         socket?.emit('debug-log', JSON.stringify({
@@ -465,24 +512,33 @@ const BingoGame: React.FC<BingoGameProps> = ({ isAdmin }) => {
             socket?.emit('debug-log', `BLOCKED: isMyTurn=${isMyTurn}, turnPhase=${turnPhase}`);
             return;
         }
-        if (grid[cellIndex].status !== 'empty') {
-            socket?.emit('debug-log', `BLOCKED: cell status=${grid[cellIndex].status}`);
+        const cell = grid[cellIndex];
+        // Can select: empty cells OR locked cells that were locked by the OTHER faction
+        const isLockedByOtherFaction = cell.status === 'locked' && cell.lockedByFaction !== myFaction;
+        if (cell.status !== 'empty' && !isLockedByOtherFaction) {
+            socket?.emit('debug-log', `BLOCKED: cell status=${cell.status}, lockedBy=${cell.lockedByFaction}, myFaction=${myFaction}`);
             return;
         }
         if (!session || !socket) {
             return;
         }
 
-        const cell = grid[cellIndex];
+        // cell was already declared above
+
+        // IMPORTANT: Clear the old card before selecting a new cell
+        // This ensures the other team doesn't see the old term they saw as jury
+        setTabooCard(null);
 
         // Send cell selection - server will fetch card from DB and broadcast
+        // If this is a retry (locked cell), tell the server to get a fresh card
         socket.emit('bingo-select-cell', {
             sessionId: session.id,
             cellIndex,
             teamId: currentTeamId,
             category: cell.category,
             type: cell.type,
-            language
+            language,
+            isRetry: isLockedByOtherFaction // Tell server this is a retry attempt
         });
 
         // Deselect previous cell and mark new one as active
@@ -513,6 +569,8 @@ const BingoGame: React.FC<BingoGameProps> = ({ isAdmin }) => {
     const handleBuzz = () => {
         if (!socket || !session || !currentTeamId || isMyTurn) return;
         const myTeam = teams.find(t => t.id === currentTeamId);
+        // Play buzzer sound immediately when clicking
+        playBuzzerSound();
         socket.emit('bingo-buzz', {
             sessionId: session.id,
             teamId: currentTeamId,
@@ -532,6 +590,8 @@ const BingoGame: React.FC<BingoGameProps> = ({ isAdmin }) => {
             return;
         }
         console.log('📤 Emitting bingo-correct to server');
+        // Play win sound immediately when host clicks Correct
+        playWinSound();
         socket.emit('bingo-correct', {
             sessionId: session.id,
             cellIndex: activeCell,
@@ -541,15 +601,18 @@ const BingoGame: React.FC<BingoGameProps> = ({ isAdmin }) => {
 
     const handleWrong = () => {
         if (!isAdmin || !socket || !session || activeCell === null) return;
-        // Lock the cell on wrong answer
+        // Notify server of failure
         socket.emit('bingo-fail', {
             sessionId: session.id,
             cellIndex: activeCell
         });
+        // Reset cell to empty so any team can try again with a new term
         setGrid(prev => prev.map((cell, i) =>
-            i === activeCell ? { ...cell, status: 'locked' } : cell
+            i === activeCell ? { ...cell, status: 'empty' } : cell
         ));
         setTimerActive(false);
+        // Play buzzer sound on host
+        playBuzzerSound();
         setTimeout(() => advanceToNextTurn(), 1500);
     };
 
@@ -618,7 +681,7 @@ const BingoGame: React.FC<BingoGameProps> = ({ isAdmin }) => {
             }
         }
 
-        // Check if grid is full - trigger showdown or declare winner
+        // Check if grid is full - declare winner by cell count (NO showdown)
         const wonCells = currentGrid.filter(c => c.status === 'won').length;
         const lockedCells = currentGrid.filter(c => c.status === 'locked').length;
         const filledCells = wonCells + lockedCells;
@@ -633,28 +696,22 @@ const BingoGame: React.FC<BingoGameProps> = ({ isAdmin }) => {
 
             console.log('🏁 Grid full! Faction A:', factionACells, 'Faction B:', factionBCells, 'Difference:', difference);
 
-            // Start Golden Showdown if tied OR only 1 point difference!
-            if (difference <= 1 && (factionACells > 0 || factionBCells > 0)) {
-                console.log('⚖️ CLOSE GAME! Starting Golden Showdown...');
-                setGameMode('SHOWDOWN');
+            // Determine winner by cell count (no showdown!)
+            if (factionACells === factionBCells) {
+                // It's a tie! Both teams win (or declare draw)
+                console.log('🤝 Its a TIE! Both teams have equal cells.');
+                setShowWinner('TIE' as any); // Special tie state
                 if (socket && session) {
-                    socket.emit('showdown-start', {
-                        sessionId: session.id,
-                        factionA: 'A',
-                        factionB: 'B',
-                        factionACells,
-                        factionBCells
-                    });
+                    socket.emit('bingo-tie', { sessionId: session.id });
                 }
-                return;
-            }
-
-            // Only declare outright winner if difference is 2+ cells
-            const winnerFaction = factionACells > factionBCells ? 'A' : 'B';
-            console.log('🏆 Grid full - Clear winner by cell count:', winnerFaction, '(difference:', difference, ')');
-            setShowWinner(winnerFaction);
-            if (socket && session) {
-                socket.emit('bingo-winner', { sessionId: session.id, faction: winnerFaction });
+            } else {
+                // Winner by most cells
+                const winnerFaction = factionACells > factionBCells ? 'A' : 'B';
+                console.log('🏆 Grid full - Winner by cell count:', winnerFaction, '(', factionACells, 'vs', factionBCells, ')');
+                setShowWinner(winnerFaction);
+                if (socket && session) {
+                    socket.emit('bingo-winner', { sessionId: session.id, faction: winnerFaction });
+                }
             }
         }
     };
@@ -1095,7 +1152,16 @@ const BingoGame: React.FC<BingoGameProps> = ({ isAdmin }) => {
                             cellClass = 'bg-gray-500/30 border-2 border-gray-500'; // Fallback
                         }
                     } else if (cell.status === 'locked') {
-                        cellClass = 'bg-gray-800/80 border-2 border-gray-600 opacity-60';
+                        // Check if this locked cell can be played by the current player
+                        const canRetry = isMyTurn && turnPhase === 'SELECTING' && cell.lockedByFaction !== myFaction;
+                        if (canRetry) {
+                            // Show as re-playable for the other team
+                            cellClass = 'bg-gray-700/50 border-2 border-orange-500/50 hover:border-orange-500 hover:bg-orange-500/20 cursor-pointer';
+                            isSelectable = true;
+                        } else {
+                            // Fully locked for the team that failed
+                            cellClass = 'bg-gray-800/80 border-2 border-gray-600 opacity-60';
+                        }
                     } else if (cell.status === 'active') {
                         cellClass = 'bg-orange-500/30 border-2 border-orange-500 ring-4 ring-orange-500/50 animate-pulse';
                     } else if (isMyTurn && turnPhase === 'SELECTING') {
@@ -1125,28 +1191,47 @@ const BingoGame: React.FC<BingoGameProps> = ({ isAdmin }) => {
                                 </div>
                             ) : cell.status === 'locked' ? (
                                 <div className="flex flex-col items-center h-full justify-center">
-                                    <span className="text-6xl opacity-50">🔒</span>
-                                    <span className="text-xs text-gray-500 mt-2">Gesperrt</span>
+                                    {/* Check if other team can retry */}
+                                    {isMyTurn && turnPhase === 'SELECTING' && cell.lockedByFaction !== myFaction ? (
+                                        <>
+                                            <span className="text-5xl">🔄</span>
+                                            <span className="text-xs text-orange-400 mt-2 font-bold">{language === 'de' ? 'Erneut versuchen!' : 'Tekrar dene!'}</span>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <span className="text-6xl opacity-50">🔒</span>
+                                            <span className="text-xs text-gray-500 mt-2">{language === 'de' ? 'Gesperrt' : 'Kilitli'}</span>
+                                        </>
+                                    )}
                                 </div>
                             ) : (
                                 <div className="flex flex-col h-full w-full">
                                     {/* Top: Category + Activity labels */}
                                     <div className="text-center py-2">
                                         <span className="text-sm font-bold text-white leading-tight block">
-                                            {getCategoryName(cell.category)}
+                                            {cell.type === 'PANTOMIME' ? '❓ Überraschung' : getCategoryName(cell.category)}
                                         </span>
                                         <span className="text-xs text-cyan-400">
                                             {ACTIVITY_ICONS[cell.type]} {ACTIVITY_NAMES[language][cell.type]}
                                         </span>
                                     </div>
-                                    {/* Bottom: Category image (60% height) */}
+                                    {/* Bottom: Category image (60% height) - Show pantomime image for pantomime type */}
                                     <div className="flex-1 flex items-center justify-center px-2 pb-2">
-                                        <img
-                                            src={cell.categoryImage}
-                                            alt={getCategoryName(cell.category)}
-                                            className="max-h-full max-w-full object-contain rounded-xl"
-                                            style={{ maxHeight: '60%' }}
-                                        />
+                                        {cell.type === 'PANTOMIME' ? (
+                                            <img
+                                                src="/images/categories/pantomime.png"
+                                                alt="Pantomime"
+                                                className="max-h-full max-w-full object-contain rounded-xl animate-pulse"
+                                                style={{ maxHeight: '60%' }}
+                                            />
+                                        ) : (
+                                            <img
+                                                src={cell.categoryImage}
+                                                alt={getCategoryName(cell.category)}
+                                                className="max-h-full max-w-full object-contain rounded-xl"
+                                                style={{ maxHeight: '60%' }}
+                                            />
+                                        )}
                                     </div>
                                 </div>
                             )}
