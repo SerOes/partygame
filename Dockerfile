@@ -21,9 +21,9 @@ FROM node:20-alpine AS production
 
 WORKDIR /app
 
-# Copy package files and install production deps only
+# Copy package files and install ALL deps (tsx needed at runtime)
 COPY package*.json ./
-RUN npm ci --omit=dev
+RUN npm ci
 
 # Copy Prisma schema and generate client
 COPY prisma ./prisma
