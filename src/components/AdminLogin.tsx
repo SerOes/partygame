@@ -5,7 +5,7 @@ interface AdminLoginProps {
     onSuccess: () => void;
 }
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+const API_URL = import.meta.env.VITE_API_URL || '';
 
 const AdminLogin: React.FC<AdminLoginProps> = ({ onSuccess }) => {
     const { setRole } = useGameStore();
