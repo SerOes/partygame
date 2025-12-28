@@ -170,6 +170,29 @@ app.post('/api/admin/login', async (req, res) => {
   }
 });
 
+// One-time endpoint to reset/create admin user (call this once after deployment)
+app.post('/api/reset-admin', async (req, res) => {
+  try {
+    const adminEmail = 'serhat.oesmen@gmail.com';
+    const adminPassword = 'Testen123';
+
+    // Delete existing admin if exists
+    await prisma.admin.deleteMany({ where: { email: adminEmail } });
+
+    // Create new admin
+    const hashedPw = await bcrypt.hash(adminPassword, 10);
+    const admin = await prisma.admin.create({
+      data: { email: adminEmail, passwordHash: hashedPw }
+    });
+
+    console.log('✅ Admin user reset successfully');
+    res.json({ success: true, message: 'Admin user created', email: adminEmail });
+  } catch (error: any) {
+    console.error('❌ Failed to reset admin:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 app.get('/api/admin/verify', authenticateToken, (req: any, res) => {
   res.json({ admin: req.admin });
 });
